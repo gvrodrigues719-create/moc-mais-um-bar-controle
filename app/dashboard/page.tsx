@@ -167,15 +167,23 @@ export default function DashboardPage() {
         }
       })
 
-  const totalAreas = displayAreas.length
+  // Filtra as áreas ativas/visíveis (que possuem pelo menos 1 item cadastrado)
+  const visibleAreas = displayAreas.filter((area: any) => {
+    const areaTotal = activeSessionExist 
+      ? area.itemCount 
+      : (isLive ? area.itemCount : (DEMO_AREA_COUNTS[area.id] ?? area.itemCount))
+    return areaTotal > 0
+  })
+
+  const totalAreas = visibleAreas.length
   const completedAreasCount = activeSessionExist 
-    ? displayAreas.filter(x => x.status === 'completed').length 
+    ? visibleAreas.filter(x => x.status === 'completed').length 
     : 0
   const areasInProgressCount = activeSessionExist 
-    ? displayAreas.filter(x => x.status === 'in_progress').length 
+    ? visibleAreas.filter(x => x.status === 'in_progress').length 
     : 0
   const pendingAreasCount = activeSessionExist 
-    ? displayAreas.filter(x => x.status === 'pending').length 
+    ? visibleAreas.filter(x => x.status === 'pending').length 
     : totalAreas
 
   const sessionStatus = activeSessionExist ? 'in_progress' : 'not_started'
@@ -297,7 +305,7 @@ export default function DashboardPage() {
           Áreas da loja
         </h3>
 
-        {displayAreas.length === 0 ? (
+        {visibleAreas.length === 0 ? (
           <div
             className="rounded-2xl p-6 border text-center space-y-1 bg-white shadow-sm"
             style={{ borderColor: 'var(--border)' }}
@@ -311,52 +319,45 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid gap-2">
-            {displayAreas
-              .filter((area: any) => {
-                const areaTotal = activeSessionExist 
-                  ? area.itemCount 
-                  : (isLive ? area.itemCount : (DEMO_AREA_COUNTS[area.id] ?? area.itemCount))
-                return areaTotal > 0
-              })
-              .map((area: any) => {
-                const AreaIcon = getAreaIcon(area.slug || area.id)
-                
-                const areaTotal = activeSessionExist 
-                  ? area.itemCount 
-                  : (isLive ? area.itemCount : (DEMO_AREA_COUNTS[area.id] ?? area.itemCount))
+            {visibleAreas.map((area: any) => {
+              const AreaIcon = getAreaIcon(area.slug || area.id)
+              
+              const areaTotal = activeSessionExist 
+                ? area.itemCount 
+                : (isLive ? area.itemCount : (DEMO_AREA_COUNTS[area.id] ?? area.itemCount))
 
-                const subtitle = activeSessionExist
-                  ? `${area.completedCount} de ${areaTotal} contados`
-                  : `${areaTotal} itens disponíveis`
+              const subtitle = activeSessionExist
+                ? `${area.completedCount} de ${areaTotal} contados`
+                : `${areaTotal} itens disponíveis`
 
-                const status = activeSessionExist 
-                  ? area.status 
-                  : 'pending'
+              const status = activeSessionExist 
+                ? area.status 
+                : 'pending'
 
-                return (
-                  <div
-                    key={area.id}
-                    className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-sm transition-all duration-150 hover:border-gray-300 active:scale-[0.99] cursor-pointer"
-                    onClick={() => router.push('/dashboard/counts')}
-                    style={{ borderColor: 'var(--border)' }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-50 border border-gray-100 shrink-0">
-                        <AreaIcon className="w-4.5 h-4.5" style={{ color: 'var(--brand)' }} />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-gray-900">
-                          {area.name}
-                        </h4>
-                        <p className="text-[10px] font-medium text-gray-400 mt-0.5">
-                          {subtitle}
-                        </p>
-                      </div>
+              return (
+                <div
+                  key={area.id}
+                  className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-sm transition-all duration-150 hover:border-gray-300 active:scale-[0.99] cursor-pointer"
+                  onClick={() => router.push('/dashboard/counts')}
+                  style={{ borderColor: 'var(--border)' }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-50 border border-gray-100 shrink-0">
+                      <AreaIcon className="w-4.5 h-4.5" style={{ color: 'var(--brand)' }} />
                     </div>
-                    <StatusBadge variant="area" status={status ?? 'pending'} />
+                    <div>
+                      <h4 className="text-xs font-bold text-gray-900">
+                        {area.name}
+                      </h4>
+                      <p className="text-[10px] font-medium text-gray-400 mt-0.5">
+                        {subtitle}
+                      </p>
+                    </div>
                   </div>
-                )
-              })}
+                  <StatusBadge variant="area" status={status ?? 'pending'} />
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -372,7 +373,7 @@ export default function DashboardPage() {
         
         <div className="grid grid-cols-3 gap-2">
           {[
-            { label: 'Total Áreas', value: totalAreas, activeColor: 'var(--foreground)', bg: '#F7F6F3' },
+            { label: 'Áreas de contagem', value: totalAreas, activeColor: 'var(--foreground)', bg: '#F7F6F3' },
             { label: 'Concluídas', value: completedAreasCount, activeColor: '#16A34A', bg: '#F0FDF4' },
             { label: 'Pendentes', value: totalAreas - completedAreasCount, activeColor: '#D97706', bg: '#FFFBEB' },
           ].map(({ label, value, activeColor, bg }) => (

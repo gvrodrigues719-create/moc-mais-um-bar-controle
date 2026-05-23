@@ -15,12 +15,38 @@
 -- ============================================================
 
 -- ------------------------------------------------------------
--- EXTENSÕES
+-- A. RESET SEGURO (idempotente)
+-- Remove objetos deste módulo se já existirem, na ordem inversa
+-- de dependência, para permitir re-execução limpa.
+-- ------------------------------------------------------------
+
+DROP TABLE IF EXISTS operational_events  CASCADE;
+DROP TABLE IF EXISTS count_session_items CASCADE;
+DROP TABLE IF EXISTS count_sessions      CASCADE;
+DROP TABLE IF EXISTS count_items         CASCADE;
+DROP TABLE IF EXISTS count_areas         CASCADE;
+DROP TABLE IF EXISTS profiles            CASCADE;
+DROP TABLE IF EXISTS stores              CASCADE;
+
+DROP FUNCTION IF EXISTS is_manager_or_admin() CASCADE;
+DROP FUNCTION IF EXISTS current_user_role()   CASCADE;
+DROP FUNCTION IF EXISTS current_store_id()    CASCADE;
+DROP FUNCTION IF EXISTS set_updated_at()      CASCADE;
+
+DROP TYPE IF EXISTS operational_event_type CASCADE;
+DROP TYPE IF EXISTS count_item_status      CASCADE;
+DROP TYPE IF EXISTS item_type              CASCADE;
+DROP TYPE IF EXISTS area_status            CASCADE;
+DROP TYPE IF EXISTS count_status           CASCADE;
+DROP TYPE IF EXISTS user_role              CASCADE;
+
+-- ------------------------------------------------------------
+-- B. EXTENSÕES
 -- ------------------------------------------------------------
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ------------------------------------------------------------
--- ENUMS
+-- C. ENUMS
 -- ------------------------------------------------------------
 
 CREATE TYPE user_role AS ENUM (
@@ -70,7 +96,7 @@ CREATE TYPE operational_event_type AS ENUM (
 );
 
 -- ------------------------------------------------------------
--- FUNÇÃO: atualizar updated_at automaticamente
+-- D. FUNÇÃO: atualizar updated_at automaticamente
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER
@@ -83,9 +109,162 @@ END;
 $$;
 
 -- ------------------------------------------------------------
--- FUNÇÕES HELPER para RLS
--- SECURITY DEFINER: executam como dono da função (bypass RLS
--- apenas para leitura do profile do caller — padrão seguro).
+-- E. TABELA: stores
+-- ------------------------------------------------------------
+CREATE TABLE stores (
+    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name       text        NOT NULL,
+    slug       text        NOT NULL UNIQUE,
+    active     boolean     NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER stores_updated_at
+    BEFORE UPDATE ON stores
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ------------------------------------------------------------
+-- F. TABELA: profiles
+-- ------------------------------------------------------------
+CREATE TABLE profiles (
+    id         uuid        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    store_id   uuid        REFERENCES stores(id) ON DELETE RESTRICT,
+    name       text        NOT NULL,
+    email      text,
+    role       user_role   NOT NULL DEFAULT 'operator',
+    active     boolean     NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER profiles_updated_at
+    BEFORE UPDATE ON profiles
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX idx_profiles_store_id ON profiles(store_id);
+CREATE INDEX idx_profiles_role     ON profiles(role);
+
+-- ------------------------------------------------------------
+-- G. TABELA: count_areas
+-- ------------------------------------------------------------
+CREATE TABLE count_areas (
+    id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_id    uuid        NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    name        text        NOT NULL,
+    slug        text        NOT NULL,
+    description text,
+    sort_order  integer     NOT NULL DEFAULT 0,
+    active      boolean     NOT NULL DEFAULT true,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (store_id, slug)
+);
+
+CREATE TRIGGER count_areas_updated_at
+    BEFORE UPDATE ON count_areas
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX idx_count_areas_store_id ON count_areas(store_id);
+
+-- ------------------------------------------------------------
+-- H. TABELA: count_items  (nasce VAZIA — populada na Fase 3)
+-- ------------------------------------------------------------
+CREATE TABLE count_items (
+    id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_id         uuid        NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    area_id          uuid        REFERENCES count_areas(id) ON DELETE SET NULL,
+    name             text        NOT NULL,
+    normalized_name  text,
+    item_type        item_type   NOT NULL DEFAULT 'raw_material',
+    unit             text        NOT NULL,
+    unit_observation text,
+    active           boolean     NOT NULL DEFAULT true,
+    sort_order       integer     NOT NULL DEFAULT 0,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER count_items_updated_at
+    BEFORE UPDATE ON count_items
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX idx_count_items_store_id  ON count_items(store_id);
+CREATE INDEX idx_count_items_area_id   ON count_items(area_id);
+CREATE INDEX idx_count_items_item_type ON count_items(item_type);
+CREATE INDEX idx_count_items_active    ON count_items(active);
+
+-- ------------------------------------------------------------
+-- I. TABELA: count_sessions
+-- ------------------------------------------------------------
+CREATE TABLE count_sessions (
+    id           uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_id     uuid         NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    status       count_status NOT NULL DEFAULT 'not_started',
+    started_by   uuid         REFERENCES profiles(id),
+    completed_by uuid         REFERENCES profiles(id),
+    started_at   timestamptz,
+    completed_at timestamptz,
+    notes        text,
+    created_at   timestamptz  NOT NULL DEFAULT now(),
+    updated_at   timestamptz  NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER count_sessions_updated_at
+    BEFORE UPDATE ON count_sessions
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX idx_count_sessions_store_id ON count_sessions(store_id);
+CREATE INDEX idx_count_sessions_status   ON count_sessions(status);
+
+-- ------------------------------------------------------------
+-- J. TABELA: count_session_items
+-- ------------------------------------------------------------
+CREATE TABLE count_session_items (
+    id          uuid              PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id  uuid              NOT NULL REFERENCES count_sessions(id) ON DELETE CASCADE,
+    item_id     uuid              NOT NULL REFERENCES count_items(id) ON DELETE CASCADE,
+    area_id     uuid              REFERENCES count_areas(id) ON DELETE SET NULL,
+    quantity    numeric,
+    status      count_item_status NOT NULL DEFAULT 'pending',
+    observation text,
+    counted_by  uuid              REFERENCES profiles(id),
+    counted_at  timestamptz,
+    created_at  timestamptz       NOT NULL DEFAULT now(),
+    updated_at  timestamptz       NOT NULL DEFAULT now(),
+    UNIQUE (session_id, item_id)
+);
+
+CREATE TRIGGER count_session_items_updated_at
+    BEFORE UPDATE ON count_session_items
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX idx_count_session_items_session ON count_session_items(session_id);
+CREATE INDEX idx_count_session_items_item    ON count_session_items(item_id);
+
+-- ------------------------------------------------------------
+-- K. TABELA: operational_events  (append-only, sem updated_at)
+-- ------------------------------------------------------------
+CREATE TABLE operational_events (
+    id          uuid                   PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_id    uuid                   NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    actor_id    uuid                   REFERENCES profiles(id),
+    event_type  operational_event_type NOT NULL,
+    source_type text,
+    source_id   uuid,
+    metadata    jsonb                  NOT NULL DEFAULT '{}',
+    created_at  timestamptz            NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_op_events_store_id   ON operational_events(store_id);
+CREATE INDEX idx_op_events_actor_id   ON operational_events(actor_id);
+CREATE INDEX idx_op_events_event_type ON operational_events(event_type);
+
+-- ------------------------------------------------------------
+-- L. FUNÇÕES HELPER para RLS
+-- Criadas APÓS profiles existir (referenciam a tabela).
+-- SECURITY DEFINER: executam como dono da função — bypass RLS
+-- apenas para leitura do profile do caller (padrão seguro).
 -- ------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION current_store_id()
@@ -121,160 +300,8 @@ AS $$
     );
 $$;
 
--- ------------------------------------------------------------
--- TABELA: stores
--- ------------------------------------------------------------
-CREATE TABLE stores (
-    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    name       text        NOT NULL,
-    slug       text        NOT NULL UNIQUE,
-    active     boolean     NOT NULL DEFAULT true,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TRIGGER stores_updated_at
-    BEFORE UPDATE ON stores
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
--- ------------------------------------------------------------
--- TABELA: profiles
--- ------------------------------------------------------------
-CREATE TABLE profiles (
-    id         uuid        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    store_id   uuid        REFERENCES stores(id) ON DELETE RESTRICT,
-    name       text        NOT NULL,
-    email      text,
-    role       user_role   NOT NULL DEFAULT 'operator',
-    active     boolean     NOT NULL DEFAULT true,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TRIGGER profiles_updated_at
-    BEFORE UPDATE ON profiles
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE INDEX idx_profiles_store_id ON profiles(store_id);
-CREATE INDEX idx_profiles_role     ON profiles(role);
-
--- ------------------------------------------------------------
--- TABELA: count_areas
--- ------------------------------------------------------------
-CREATE TABLE count_areas (
-    id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    store_id    uuid        NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
-    name        text        NOT NULL,
-    slug        text        NOT NULL,
-    description text,
-    sort_order  integer     NOT NULL DEFAULT 0,
-    active      boolean     NOT NULL DEFAULT true,
-    created_at  timestamptz NOT NULL DEFAULT now(),
-    updated_at  timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (store_id, slug)
-);
-
-CREATE TRIGGER count_areas_updated_at
-    BEFORE UPDATE ON count_areas
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE INDEX idx_count_areas_store_id ON count_areas(store_id);
-
--- ------------------------------------------------------------
--- TABELA: count_items  (nasce VAZIA — populada na Fase 3)
--- ------------------------------------------------------------
-CREATE TABLE count_items (
-    id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    store_id         uuid        NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
-    area_id          uuid        REFERENCES count_areas(id) ON DELETE SET NULL,
-    name             text        NOT NULL,
-    normalized_name  text,
-    item_type        item_type   NOT NULL DEFAULT 'raw_material',
-    unit             text        NOT NULL,
-    unit_observation text,
-    active           boolean     NOT NULL DEFAULT true,
-    sort_order       integer     NOT NULL DEFAULT 0,
-    created_at       timestamptz NOT NULL DEFAULT now(),
-    updated_at       timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TRIGGER count_items_updated_at
-    BEFORE UPDATE ON count_items
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE INDEX idx_count_items_store_id  ON count_items(store_id);
-CREATE INDEX idx_count_items_area_id   ON count_items(area_id);
-CREATE INDEX idx_count_items_item_type ON count_items(item_type);
-CREATE INDEX idx_count_items_active    ON count_items(active);
-
--- ------------------------------------------------------------
--- TABELA: count_sessions
--- ------------------------------------------------------------
-CREATE TABLE count_sessions (
-    id           uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
-    store_id     uuid         NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
-    status       count_status NOT NULL DEFAULT 'not_started',
-    started_by   uuid         REFERENCES profiles(id),
-    completed_by uuid         REFERENCES profiles(id),
-    started_at   timestamptz,
-    completed_at timestamptz,
-    notes        text,
-    created_at   timestamptz  NOT NULL DEFAULT now(),
-    updated_at   timestamptz  NOT NULL DEFAULT now()
-);
-
-CREATE TRIGGER count_sessions_updated_at
-    BEFORE UPDATE ON count_sessions
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE INDEX idx_count_sessions_store_id ON count_sessions(store_id);
-CREATE INDEX idx_count_sessions_status   ON count_sessions(status);
-
--- ------------------------------------------------------------
--- TABELA: count_session_items
--- ------------------------------------------------------------
-CREATE TABLE count_session_items (
-    id          uuid              PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id  uuid              NOT NULL REFERENCES count_sessions(id) ON DELETE CASCADE,
-    item_id     uuid              NOT NULL REFERENCES count_items(id) ON DELETE CASCADE,
-    area_id     uuid              REFERENCES count_areas(id) ON DELETE SET NULL,
-    quantity    numeric,
-    status      count_item_status NOT NULL DEFAULT 'pending',
-    observation text,
-    counted_by  uuid              REFERENCES profiles(id),
-    counted_at  timestamptz,
-    created_at  timestamptz       NOT NULL DEFAULT now(),
-    updated_at  timestamptz       NOT NULL DEFAULT now(),
-    UNIQUE (session_id, item_id)
-);
-
-CREATE TRIGGER count_session_items_updated_at
-    BEFORE UPDATE ON count_session_items
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE INDEX idx_count_session_items_session ON count_session_items(session_id);
-CREATE INDEX idx_count_session_items_item    ON count_session_items(item_id);
-
--- ------------------------------------------------------------
--- TABELA: operational_events  (append-only, sem updated_at)
--- ------------------------------------------------------------
-CREATE TABLE operational_events (
-    id          uuid                   PRIMARY KEY DEFAULT gen_random_uuid(),
-    store_id    uuid                   NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
-    actor_id    uuid                   REFERENCES profiles(id),
-    event_type  operational_event_type NOT NULL,
-    source_type text,
-    source_id   uuid,
-    metadata    jsonb                  NOT NULL DEFAULT '{}',
-    created_at  timestamptz            NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_op_events_store_id   ON operational_events(store_id);
-CREATE INDEX idx_op_events_actor_id   ON operational_events(actor_id);
-CREATE INDEX idx_op_events_event_type ON operational_events(event_type);
-
 -- ============================================================
--- ROW LEVEL SECURITY
+-- M. ROW LEVEL SECURITY
 -- ============================================================
 
 ALTER TABLE stores              ENABLE ROW LEVEL SECURITY;

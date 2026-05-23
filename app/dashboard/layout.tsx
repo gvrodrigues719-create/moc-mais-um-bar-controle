@@ -72,21 +72,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--background)' }}>
       {/* Header */}
       <header
-        className="sticky top-0 z-30 border-b px-5 py-3.5 flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.02)]"
+        className="sticky top-0 z-30 border-b px-5 py-3 flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.02)]"
         style={{ borderColor: 'var(--border)' }}
       >
-        <div className="flex flex-col">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-xl font-black uppercase tracking-tight" style={{ color: 'var(--brand)' }}>
-              +1 BAR
-            </span>
-            <span className="text-xs font-bold uppercase tracking-[0.15em]" style={{ color: 'var(--foreground)', opacity: 0.8 }}>
-              Controle
+        <div className="flex items-center gap-3">
+          <div className="relative h-10 w-10 shrink-0 flex items-center justify-center">
+            <img
+              src="/brand/logo-mais-um-bar.png"
+              alt="+1 Bar"
+              className="h-10 w-10 object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                const sibling = e.currentTarget.nextElementSibling as HTMLElement;
+                if (sibling) sibling.style.display = 'block';
+              }}
+            />
+            {/* Fallback sutil de logotipo se a imagem falhar */}
+            <div className="hidden w-10 h-10 rounded-full bg-red-50 flex items-center justify-center font-black text-xs text-red-800 border border-red-100">
+              +1B
+            </div>
+          </div>
+          
+          <div className="flex flex-col">
+            <div className="flex items-baseline gap-1">
+              <span className="text-base font-black uppercase tracking-tight" style={{ color: 'var(--brand)' }}>
+                +1 BAR
+              </span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.15em]" style={{ color: 'var(--foreground)', opacity: 0.8 }}>
+                Controle
+              </span>
+            </div>
+            <span className="text-[9px] font-bold uppercase tracking-wider -mt-0.5" style={{ color: 'var(--muted)' }}>
+              Controle Operacional
             </span>
           </div>
-          <span className="text-[10px] font-bold uppercase tracking-wider -mt-0.5" style={{ color: 'var(--muted)' }}>
-            Controle Operacional
-          </span>
         </div>
         <button
           onClick={handleLogout}

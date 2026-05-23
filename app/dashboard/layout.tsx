@@ -3,22 +3,64 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { LogOut, LayoutGrid, ClipboardList, Settings } from 'lucide-react'
-import { MOCK_CURRENT_USER } from '@/mocks/maisUmBar'
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import type { UserRole } from '@/lib/types'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
+  const [ready, setReady] = useState(false)
+  const [role, setRole] = useState<UserRole>('operator')
 
-  // Simulação de guarda de rota (substituir por Supabase Auth)
-  const [checked, setChecked] = useState(false)
   useEffect(() => {
-    // Aqui entrará verificação real de sessão
-    setChecked(true)
-  }, [])
+    async function checkSession() {
+      if (!isSupabaseConfigured()) {
+        // Modo local: liberar sem verificação de sessão.
+        setReady(true)
+        return
+      }
 
-  if (!checked) return null
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
 
-  const isAdmin = MOCK_CURRENT_USER.role === 'admin' || MOCK_CURRENT_USER.role === 'manager'
+      if (!user) {
+        router.replace('/login')
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (profile?.role) setRole(profile.role as UserRole)
+      setReady(true)
+    }
+
+    checkSession()
+  }, [router])
+
+  const handleLogout = async () => {
+    if (!isSupabaseConfigured()) {
+      router.replace('/login')
+      return
+    }
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.replace('/login')
+    router.refresh()
+  }
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--background)' }}>
+        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--brand)' }} />
+      </div>
+    )
+  }
+
+  const isAdmin = role === 'admin' || role === 'manager'
 
   const navItems = [
     { href: '/dashboard', label: 'Início', Icon: LayoutGrid },
@@ -42,7 +84,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </p>
         </div>
         <button
-          onClick={() => router.push('/login')}
+          onClick={handleLogout}
           className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
           title="Sair"
         >
@@ -66,9 +108,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <button
               key={href}
               onClick={() => router.push(href)}
-              className={`flex flex-col items-center py-3 px-4 gap-1 transition text-xs font-semibold flex-1 ${
-                active ? '' : 'text-gray-400 hover:text-gray-600'
-              }`}
+              className={`flex flex-col items-center py-3 px-4 gap-1 text-xs font-semibold flex-1 transition ${!active ? 'text-gray-400 hover:text-gray-600' : ''}`}
               style={active ? { color: 'var(--brand)' } : {}}
             >
               <Icon className="w-5 h-5" />

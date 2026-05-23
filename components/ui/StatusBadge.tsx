@@ -16,6 +16,7 @@ const COUNT_STYLES: Record<CountStatus, string> = {
   not_started: 'bg-gray-100 text-gray-500',
   in_progress: 'bg-amber-50 text-amber-700',
   completed: 'bg-green-50 text-green-700',
+  cancelled: 'bg-red-50 text-red-500',
 }
 
 export default function StatusBadge(props: Props) {

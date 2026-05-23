@@ -21,17 +21,28 @@ export const AREA_STATUS_LABELS: Record<AreaStatus, string> = {
 }
 
 // --- Status da sessão de contagem ---
-export type CountStatus = 'not_started' | 'in_progress' | 'completed'
+export type CountStatus = 'not_started' | 'in_progress' | 'completed' | 'cancelled'
 
 export const COUNT_STATUS_LABELS: Record<CountStatus, string> = {
   not_started: 'Não iniciada',
   in_progress: 'Em andamento',
   completed: 'Concluída',
+  cancelled: 'Cancelada',
+}
+
+// --- Status de item dentro de uma sessão ---
+export type CountItemStatus = 'pending' | 'counted' | 'zeroed' | 'skipped'
+
+export const COUNT_ITEM_STATUS_LABELS: Record<CountItemStatus, string> = {
+  pending: 'Pendente',
+  counted: 'Contado',
+  zeroed: 'Zerado',
+  skipped: 'Pulado',
 }
 
 // --- Tipos de item ---
-// IMPORTANTE: O tipo de item NÃO é a área física onde está armazenado.
-// Exemplo: Iscas de Filé (prepared_portioned) ficam no Freezer (área física).
+// IMPORTANTE: O tipo descreve a NATUREZA do produto, não a área física onde está.
+// Exemplo: Iscas de Filé Mignon → prepared_portioned, armazenado no Freezer.
 export type ItemType =
   | 'raw_material'
   | 'prepared_portioned'
@@ -53,7 +64,7 @@ export const ITEM_TYPE_CONFIG: Record<
   prepared_portioned: {
     label: 'Preparados / Porcionados',
     description:
-      'Produto que já passou por manipulação interna: pré-preparo, corte, tempero, produção ou porcionamento. Ex: iscas de filé mignon, blend porcionado, frango temperado, molho pronto.',
+      'Produto que já passou por manipulação interna, pré-preparo, corte, tempero, produção ou porcionamento. Ex: iscas de filé mignon, blend porcionado, frango temperado, molho pronto.',
     color: '#F59E0B',
   },
   finished_product: {
@@ -79,29 +90,79 @@ export const ITEM_TYPE_CONFIG: Record<
   },
 }
 
-// --- Estrutura de área ---
-export interface Area {
+// --- Tipos de evento operacional ---
+export type OperationalEventType =
+  | 'count_session_started'
+  | 'count_session_completed'
+  | 'count_item_counted'
+  | 'count_item_zeroed'
+  | 'area_started'
+  | 'area_completed'
+  | 'item_created'
+  | 'item_updated'
+
+// --- Estruturas de domínio ---
+
+export interface Store {
   id: string
   name: string
-  icon: string
-  status: AreaStatus
-  itemCount: number
+  slug: string
+  active: boolean
+  created_at: string
 }
 
-// --- Estrutura de item ---
-export interface CountItem {
+export interface Profile {
   id: string
+  store_id: string
   name: string
-  areaId: string
-  type: ItemType
-  unit: string
+  email: string | null
+  role: UserRole
   active: boolean
 }
 
-// --- Estrutura de usuário ---
-export interface User {
+export interface CountArea {
   id: string
+  store_id: string
   name: string
-  role: UserRole
-  store: string
+  slug: string
+  description: string | null
+  sort_order: number
+  active: boolean
+}
+
+export interface CountItem {
+  id: string
+  store_id: string
+  area_id: string | null
+  name: string
+  normalized_name: string | null
+  item_type: ItemType
+  unit: string
+  unit_observation: string | null
+  active: boolean
+  sort_order: number
+}
+
+export interface CountSession {
+  id: string
+  store_id: string
+  status: CountStatus
+  started_by: string | null
+  completed_by: string | null
+  started_at: string | null
+  completed_at: string | null
+  notes: string | null
+  created_at: string
+}
+
+export interface CountSessionItem {
+  id: string
+  session_id: string
+  item_id: string
+  area_id: string | null
+  quantity: number | null
+  status: CountItemStatus
+  observation: string | null
+  counted_by: string | null
+  counted_at: string | null
 }

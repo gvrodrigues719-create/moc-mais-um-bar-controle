@@ -72,23 +72,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--background)' }}>
       {/* Header */}
       <header
-        className="sticky top-0 z-30 border-b px-4 py-3 flex items-center justify-between bg-white shadow-sm"
+        className="sticky top-0 z-30 border-b px-5 py-3.5 flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.02)]"
         style={{ borderColor: 'var(--border)' }}
       >
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--brand)' }}>
-            +1 Bar
-          </p>
-          <p className="text-sm font-extrabold tracking-tight" style={{ color: 'var(--foreground)' }}>
-            MOC Controle
-          </p>
+        <div className="flex flex-col">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-black uppercase tracking-tight" style={{ color: 'var(--brand)' }}>
+              +1 BAR
+            </span>
+            <span className="text-xs font-bold uppercase tracking-[0.15em]" style={{ color: 'var(--foreground)', opacity: 0.8 }}>
+              Controle
+            </span>
+          </div>
+          <span className="text-[10px] font-bold uppercase tracking-wider -mt-0.5" style={{ color: 'var(--muted)' }}>
+            Controle Operacional
+          </span>
         </div>
         <button
           onClick={handleLogout}
-          className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+          className="p-2.5 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-50 border border-transparent hover:border-gray-200 transition-all active:scale-95 cursor-pointer"
           title="Sair"
         >
-          <LogOut className="w-5 h-5" />
+          <LogOut className="w-4.5 h-4.5" />
         </button>
       </header>
 
@@ -99,7 +104,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Bottom Navigation */}
       <nav
-        className="fixed bottom-0 left-0 right-0 bg-white border-t z-30 flex justify-around"
+        className="fixed bottom-0 left-0 right-0 bg-white border-t z-30 flex justify-around shadow-[0_-2px_10px_rgba(0,0,0,0.015)]"
         style={{ borderColor: 'var(--border)' }}
       >
         {navItems.map(({ href, label, Icon }) => {
@@ -108,11 +113,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <button
               key={href}
               onClick={() => router.push(href)}
-              className={`flex flex-col items-center py-3 px-4 gap-1 text-xs font-semibold flex-1 transition ${!active ? 'text-gray-400 hover:text-gray-600' : ''}`}
-              style={active ? { color: 'var(--brand)' } : {}}
+              className="flex flex-col items-center py-3.5 px-4 gap-1 flex-1 transition-all duration-200 relative cursor-pointer"
             >
-              <Icon className="w-5 h-5" />
-              {label}
+              {/* Active Tab Bar Indicator */}
+              {active && (
+                <div
+                  className="absolute top-0 left-1/4 right-1/4 h-[3px] rounded-b-full transition-all duration-300"
+                  style={{ backgroundColor: 'var(--brand)' }}
+                />
+              )}
+              <Icon
+                className="w-5 h-5 transition-transform duration-200"
+                style={{
+                  color: active ? 'var(--brand)' : 'var(--muted)',
+                  transform: active ? 'scale(1.05)' : 'scale(1)',
+                }}
+              />
+              <span
+                className="text-[10px] font-bold uppercase tracking-wider transition-colors duration-200"
+                style={{
+                  color: active ? 'var(--foreground)' : 'var(--muted)',
+                  fontWeight: active ? '900' : '600',
+                }}
+              >
+                {label}
+              </span>
             </button>
           )
         })}

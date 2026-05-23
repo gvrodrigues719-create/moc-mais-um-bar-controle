@@ -6,7 +6,7 @@ import { Toaster } from 'react-hot-toast'
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
 
 export const metadata: Metadata = {
-  title: 'MOC +1 Bar Controle',
+  title: '+1 Bar Controle',
   description: 'Controle operacional de contagem',
 }
 

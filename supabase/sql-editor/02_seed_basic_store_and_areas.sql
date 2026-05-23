@@ -72,7 +72,7 @@ VALUES
 ON CONFLICT (store_id, slug) DO NOTHING;
 
 -- Verificar resultado:
-SELECT id, name, slug, sort_order FROM stores WHERE slug = 'mais-um-bar';
+SELECT id, name, slug, active FROM stores WHERE slug = 'mais-um-bar';
 SELECT id, name, slug, sort_order FROM count_areas ORDER BY sort_order;
 
 -- ============================================================

@@ -74,44 +74,43 @@ export default function AdminPage() {
       </div>
 
       {/* Blocos de configuração */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         {ADMIN_BLOCKS.map(block => {
           const Icon = block.icon
           const isPhase3 = block.phase === 3
           return (
             <div
               key={block.id}
-              className="rounded-2xl p-4 border flex items-center justify-between"
+              className={`rounded-xl p-3.5 border flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.01)] transition-all duration-200 ${!isPhase3 ? 'hover:border-gray-300' : ''}`}
               style={{
-                backgroundColor: 'white',
                 borderColor: 'var(--border)',
-                opacity: isPhase3 ? 0.75 : 1,
+                opacity: isPhase3 ? 0.7 : 1,
               }}
             >
               <div className="flex items-start gap-3 flex-1 min-w-0">
-                <div className="p-2 rounded-xl shrink-0" style={{ backgroundColor: 'var(--brand-light)' }}>
+                <div className="p-2 rounded-lg shrink-0 border border-gray-100 bg-gray-50">
                   <Icon className="w-4 h-4" style={{ color: 'var(--brand)' }} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
+                    <p className="text-xs font-black uppercase tracking-tight" style={{ color: 'var(--foreground)' }}>
                       {block.title}
                     </p>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${block.phaseStyle}`}>
+                    <span className={`text-[8px] font-extrabold px-2 py-0.5 rounded uppercase tracking-wider ${block.phaseStyle}`}>
                       {block.phaseLabel}
                     </span>
                     {isPhase3 && <Lock className="w-3 h-3 text-gray-400" />}
                   </div>
-                  <p className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--muted)' }}>
+                  <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--muted)' }}>
                     {block.description}
                   </p>
                   {block.id === 'areas' && (
-                    <p className="text-xs font-semibold mt-1" style={{ color: 'var(--brand)' }}>
+                    <p className="text-[10px] font-bold mt-1" style={{ color: 'var(--brand)' }}>
                       {areaCount} áreas {isLive ? 'no banco' : '(mock)'}
                     </p>
                   )}
                   {isPhase3 && (
-                    <p className="text-xs font-semibold mt-1 text-amber-600">
+                    <p className="text-[10px] font-bold mt-1 text-amber-600">
                       Disponível após cadastro/importação de itens
                     </p>
                   )}

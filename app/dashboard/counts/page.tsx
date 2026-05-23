@@ -45,17 +45,21 @@ export default function CountsPage() {
         <>
           {/* Aviso de fase */}
           <div
-            className="rounded-2xl p-5 border-2 border-dashed space-y-2 text-center"
-            style={{ borderColor: 'var(--border)', backgroundColor: 'white' }}
+            className="rounded-2xl p-6 border-2 border-dashed bg-white shadow-[0_2px_8px_rgba(0,0,0,0.01)] text-center space-y-3"
+            style={{ borderColor: 'var(--border)' }}
           >
-            <ClipboardList className="w-8 h-8 mx-auto" style={{ color: 'var(--brand)' }} />
-            <p className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-              Fluxo de contagem em preparação
-            </p>
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
-              O formulário de entrada de quantidades será implementado na Fase 3,
-              após o cadastro completo dos itens e insumos da loja.
-            </p>
+            <div className="w-10 h-10 mx-auto rounded-full bg-gray-50 flex items-center justify-center border border-gray-100">
+              <ClipboardList className="w-5 h-5" style={{ color: 'var(--brand)' }} />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-black uppercase tracking-wider" style={{ color: 'var(--foreground)' }}>
+                Fluxo de contagem em preparação
+              </p>
+              <p className="text-[11px] leading-relaxed" style={{ color: 'var(--muted)' }}>
+                O formulário de entrada de quantidades será implementado na Fase 3,
+                após o cadastro completo dos itens e insumos da loja.
+              </p>
+            </div>
           </div>
 
           {/* Áreas */}
@@ -77,26 +81,30 @@ export default function CountsPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="grid gap-2">
                 {displayAreas.map((area: any) => (
                   <div
                     key={area.id}
-                    className="rounded-2xl p-4 border flex items-center justify-between"
-                    style={{ backgroundColor: 'white', borderColor: 'var(--border)' }}
+                    className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.01)] transition-all duration-200 hover:border-gray-300"
+                    style={{ borderColor: 'var(--border)' }}
                   >
                     <div className="flex items-center gap-3">
-                      {area.icon && <span className="text-2xl">{area.icon}</span>}
+                      {area.icon && (
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg bg-gray-50 border border-gray-100 shrink-0">
+                          {area.icon}
+                        </div>
+                      )}
                       <div>
-                        <p className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
+                        <p className="text-xs font-bold" style={{ color: 'var(--foreground)' }}>
                           {area.name}
                         </p>
                         {area.itemCount !== undefined && (
-                          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                          <p className="text-[10px] font-medium animate-pulse" style={{ color: 'var(--muted)' }}>
                             {area.itemCount} itens para contar
                           </p>
                         )}
                         {isLive && (
-                          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                          <p className="text-[9px] font-semibold text-amber-600" style={{ opacity: 0.85 }}>
                             Itens serão carregados na Fase 3
                           </p>
                         )}

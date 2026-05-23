@@ -68,18 +68,20 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-8">
 
         {/* Identidade */}
-        <div className="text-center space-y-1">
-          <p
-            className="text-xs font-bold uppercase tracking-[0.2em]"
-            style={{ color: 'var(--brand)' }}
-          >
-            +1 Bar
-          </p>
-          <h1
-            className="text-2xl font-extrabold tracking-tight"
-            style={{ color: 'var(--foreground)' }}
-          >
-            MOC Controle
+        <div className="text-center space-y-2">
+          <h1 className="flex flex-col items-center justify-center leading-tight">
+            <span
+              className="text-4xl font-black uppercase tracking-wider"
+              style={{ color: 'var(--brand)' }}
+            >
+              +1 BAR
+            </span>
+            <span
+              className="text-sm font-bold uppercase tracking-[0.3em] mt-1"
+              style={{ color: 'var(--foreground)' }}
+            >
+              Controle
+            </span>
           </h1>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
             Controle operacional de contagem

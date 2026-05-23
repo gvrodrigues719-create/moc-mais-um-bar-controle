@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, MapPin, Package, Users, ClipboardList, ChevronRight, Check, Loader2 } from 'lucide-react'
+import { ArrowLeft, MapPin, Package, Users, ClipboardList, ChevronRight, Loader2 } from 'lucide-react'
 import { useStoreData } from '@/hooks/useStoreData'
 import { ITEM_TYPE_CONFIG, type ItemType } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
@@ -219,24 +219,6 @@ export default function AdminPage() {
         })}
       </div>
 
-      {/* Caixa de Status do Banco Conectado */}
-      <div
-        className="rounded-2xl p-4 border space-y-2 shadow-sm border-l-4"
-        style={{ 
-          backgroundColor: '#F0FDF4', 
-          borderColor: 'var(--border)', 
-          borderLeftColor: '#10B981' 
-        }}
-      >
-        <p className="text-xs font-bold uppercase tracking-widest text-green-700 flex items-center gap-1.5">
-          <Check className="w-4 h-4" />
-          Painel de Controle Real
-        </p>
-        <p className="text-xs leading-relaxed text-green-800 font-medium">
-          O sistema está totalmente conectado ao banco de dados Supabase real do +1 Bar.
-          A Fase 3 está ativa com contagens reais, auditoria de eventos e catálogo de insumos completo.
-        </p>
-      </div>
 
       {/* Tipos de item */}
       <div>

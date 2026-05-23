@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import type { ItemType } from '@/lib/types'
 
 /**
@@ -194,4 +195,214 @@ export async function getAreasForAdminAction(): Promise<{
     .order('sort_order', { ascending: true })
 
   return { success: true, areas: (data || []) as AdminArea[] }
+}
+
+// ─── USUÁRIOS ─────────────────────────────────────────────────────────────────
+
+export interface AdminUser {
+  id: string
+  name: string
+  email: string | null
+  role: 'operator' | 'manager' | 'admin'
+  active: boolean
+  created_at: string
+}
+
+/**
+ * Cria o client administrativo do Supabase usando a service role.
+ * Roda estritamente no servidor.
+ */
+function getServiceRoleClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) {
+    throw new Error('As variáveis do Supabase estão ausentes no servidor.')
+  }
+  return createSupabaseClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+}
+
+/**
+ * Lista todos os perfis cadastrados na loja.
+ * Ordena por role e nome.
+ */
+export async function getUsersAction(): Promise<{
+  success: boolean
+  error?: string
+  users: AdminUser[]
+}> {
+  const supabase = await createClient()
+  const ctx = await getAdminContext(supabase)
+  if (!ctx) return { success: false, error: 'Sem permissão.', users: [] }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, email, role, active, created_at')
+    .eq('store_id', ctx.storeId)
+    .order('role', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (error) return { success: false, error: error.message, users: [] }
+
+  return { success: true, users: (data || []) as unknown as AdminUser[] }
+}
+
+/**
+ * Atualiza um usuário (nome, cargo ou status ativo/inativo).
+ * Bloqueia se o usuário logado tentar se inativar ou se rebaixar de cargo.
+ */
+export async function updateUserAction(
+  userId: string,
+  data: { name?: string; role?: 'operator' | 'manager' | 'admin'; active?: boolean }
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient()
+  const ctx = await getAdminContext(supabase)
+  if (!ctx) return { success: false, error: 'Sem permissão.' }
+
+  // Evitar lockout: Usuário logado não pode se desativar nem alterar o próprio cargo.
+  if (userId === ctx.userId) {
+    if (data.active === false) {
+      return { success: false, error: 'Você não pode desativar o próprio usuário.' }
+    }
+    if (data.role !== undefined && data.role !== ctx.role) {
+      return { success: false, error: 'Você não pode alterar o próprio cargo.' }
+    }
+  }
+
+  // Restrição de gerente (manager)
+  if (ctx.role === 'manager') {
+    const { data: target } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (!target || target.role !== 'operator') {
+      return { success: false, error: 'Gerentes só podem atualizar operadores.' }
+    }
+    if (data.role !== undefined && data.role !== 'operator') {
+      return { success: false, error: 'Gerentes só podem manter a permissão de operadores.' }
+    }
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update(data)
+    .eq('id', userId)
+    .eq('store_id', ctx.storeId)
+
+  if (error) return { success: false, error: error.message }
+
+  // Registrar eventos operacionais
+  let eventType = 'user_updated'
+  if (data.active === false) eventType = 'user_deactivated'
+  else if (data.active === true) eventType = 'user_activated'
+
+  await supabase.from('operational_events').insert({
+    store_id: ctx.storeId,
+    actor_id: ctx.userId,
+    event_type: eventType as any,
+    source_type: 'profiles',
+    source_id: userId,
+    metadata: { fields: Object.keys(data) },
+  })
+
+  return { success: true }
+}
+
+/**
+ * Cria um novo usuário no Auth e no Profile.
+ * Apenas administradores (admin) podem cadastrar novos usuários.
+ */
+export async function createUserAction(data: {
+  name: string
+  email: string
+  role: 'operator' | 'manager' | 'admin'
+  password?: string
+}): Promise<{ success: boolean; error?: string; temporaryPassword?: string }> {
+  const supabase = await createClient()
+  const ctx = await getAdminContext(supabase)
+  
+  if (!ctx || ctx.role !== 'admin') {
+    return { success: false, error: 'Apenas administradores podem cadastrar novos usuários.' }
+  }
+
+  const nameTrimmed = data.name.trim()
+  const emailTrimmed = data.email.toLowerCase().trim()
+  
+  if (!nameTrimmed || !emailTrimmed) {
+    return { success: false, error: 'Nome e e-mail são obrigatórios.' }
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(emailTrimmed)) {
+    return { success: false, error: 'E-mail inválido.' }
+  }
+
+  const password = data.password ? data.password.trim() : Math.random().toString(36).substring(2, 10)
+  if (password.length < 6) {
+    return { success: false, error: 'A senha deve ter no mínimo 6 caracteres.' }
+  }
+
+  try {
+    const adminClient = getServiceRoleClient()
+
+    // 1. Cria credenciais no Auth
+    const { data: authUser, error: authErr } = await adminClient.auth.admin.createUser({
+      email: emailTrimmed,
+      password: password,
+      email_confirm: true,
+      user_metadata: { name: nameTrimmed },
+    })
+
+    if (authErr) {
+      if (authErr.message.includes('already exists') || authErr.message.includes('already registered')) {
+        return { success: false, error: 'Este e-mail já está cadastrado.' }
+      }
+      return { success: false, error: authErr.message }
+    }
+
+    if (!authUser?.user) {
+      return { success: false, error: 'Falha ao criar usuário no Auth.' }
+    }
+
+    // 2. Insere na tabela profiles
+    const { error: profileErr } = await adminClient
+      .from('profiles')
+      .insert({
+        id: authUser.user.id,
+        store_id: ctx.storeId,
+        name: nameTrimmed,
+        email: emailTrimmed,
+        role: data.role,
+        active: true,
+      })
+
+    if (profileErr) {
+      // Reverter criação de credenciais se a tabela profile falhar para evitar inconsistência
+      await adminClient.auth.admin.deleteUser(authUser.user.id)
+      return { success: false, error: `Erro ao criar perfil: ${profileErr.message}` }
+    }
+
+    // 3. Registrar evento
+    await adminClient.from('operational_events').insert({
+      store_id: ctx.storeId,
+      actor_id: ctx.userId,
+      event_type: 'user_created',
+      source_type: 'profiles',
+      source_id: authUser.user.id,
+      metadata: { role: data.role },
+    })
+
+    return {
+      success: true,
+      temporaryPassword: password,
+    }
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erro inesperado no servidor.' }
+  }
 }

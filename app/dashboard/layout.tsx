@@ -30,11 +30,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, active')
         .eq('id', user.id)
         .maybeSingle()
 
-      if (profile?.role) setRole(profile.role as UserRole)
+      if (!profile || profile.active === false) {
+        await supabase.auth.signOut()
+        router.replace('/login?error=inactive')
+        return
+      }
+
+      setRole(profile.role as UserRole)
       setReady(true)
     }
 

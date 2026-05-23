@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ClipboardList, Clock, CheckCircle2, ChevronRight,
@@ -9,7 +10,22 @@ import { useStoreData } from '@/hooks/useStoreData'
 import { USER_ROLE_LABELS, COUNT_STATUS_LABELS, type CountSession } from '@/lib/types'
 import StatusBadge from '@/components/ui/StatusBadge'
 import ProgressBar from '@/components/ui/ProgressBar'
+import { createClient } from '@/lib/supabase/client'
+import { getActiveSessionAction } from '@/app/actions/count'
 import { MOCK_CURRENT_USER, MOCK_TODAY_COUNT, MOCK_AREAS, MOCK_HISTORY } from '@/mocks/maisUmBar'
+
+// Função utilitária para mapear slug da área física para emoji
+export function getAreaIcon(slug: string): string {
+  const icons: Record<string, string> = {
+    'bar': '🍸',
+    'cozinha': '🍳',
+    'estoque-seco': '📦',
+    'bebidas': '🍹',
+    'freezer-camara': '🥶',
+    'descartaveis': '🥤'
+  }
+  return icons[slug] || '📁'
+}
 
 function greeting() {
   const h = new Date().getHours()
@@ -32,7 +48,41 @@ export default function DashboardPage() {
   const router = useRouter()
   const { loading, isConfigured, profile, store, areas, recentSessions, error } = useStoreData()
 
-  if (loading) {
+  // Estado local para carregar sessão de contagem ativa
+  const [activeSession, setActiveSession] = useState<CountSession | null>(null)
+  const [sessionItems, setSessionItems] = useState<any[]>([])
+  const [loadingSession, setLoadingSession] = useState(true)
+
+  useEffect(() => {
+    if (!isConfigured || !profile) {
+      setLoadingSession(false)
+      return
+    }
+
+    async function loadActiveSession() {
+      try {
+        const session = await getActiveSessionAction()
+        setActiveSession(session)
+        if (session) {
+          const supabase = createClient()
+          const { data: items } = await supabase
+            .from('count_session_items')
+            .select('id, status, area_id')
+            .eq('session_id', session.id)
+
+          setSessionItems(items || [])
+        }
+      } catch (err) {
+        console.error('Erro ao carregar sessão ativa na Home:', err)
+      } finally {
+        setLoadingSession(false)
+      }
+    }
+
+    loadActiveSession()
+  }, [isConfigured, profile])
+
+  if (loading || loadingSession) {
     return (
       <div className="flex items-center justify-center py-24">
         <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--brand)' }} />
@@ -46,12 +96,52 @@ export default function DashboardPage() {
   const displayName = isLive ? profile!.name : MOCK_CURRENT_USER.name
   const displayRole = isLive ? profile!.role : MOCK_CURRENT_USER.role
   const displayStore = isLive ? (store?.name ?? '+1 Bar') : MOCK_CURRENT_USER.store
-  const displayAreas = isLive ? areas : MOCK_AREAS
-  const completedAreas = isLive
-    ? 0 // sessão ativa ainda não implementada (Fase 3)
-    : MOCK_TODAY_COUNT.completedAreas
+
+  // Calcular progresso real de itens
+  const activeSessionExist = isLive && activeSession !== null
+  const totalItems = activeSessionExist ? sessionItems.length : (isLive ? 0 : 223)
+  const completedItems = activeSessionExist ? sessionItems.filter(x => x.status !== 'pending').length : (isLive ? 0 : 45)
+  const progress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0
+
+  // Progresso das áreas
+  const displayAreas = isLive
+    ? areas.map(area => {
+        if (activeSessionExist) {
+          const areaItems = sessionItems.filter(x => x.area_id === area.id)
+          const areaTotal = areaItems.length
+          const areaCompleted = areaItems.filter(x => x.status !== 'pending').length
+          const status = areaCompleted === 0 ? 'pending' : (areaCompleted === areaTotal ? 'completed' : 'in_progress')
+          return {
+            ...area,
+            itemCount: areaTotal,
+            completedCount: areaCompleted,
+            status,
+          }
+        }
+        return {
+          ...area,
+          itemCount: 0,
+          completedCount: 0,
+          status: 'pending' as const,
+        }
+      })
+    : MOCK_AREAS.map(area => {
+        const areaTotal = area.itemCount
+        const status = area.status ?? 'pending'
+        const areaCompleted = status === 'completed' ? areaTotal : (status === 'in_progress' ? Math.round(areaTotal / 2) : 0)
+        return {
+          ...area,
+          completedCount: areaCompleted,
+          status,
+        }
+      })
+
   const totalAreas = displayAreas.length
-  const progress = totalAreas > 0 ? Math.round((completedAreas / totalAreas) * 100) : 0
+  const completedAreasCount = displayAreas.filter(x => x.status === 'completed').length
+  const areasInProgressCount = displayAreas.filter(x => x.status === 'in_progress').length
+  const pendingAreasCount = displayAreas.filter(x => x.status === 'pending').length
+
+  const sessionStatus = activeSessionExist ? 'in_progress' : (isLive ? 'not_started' : MOCK_TODAY_COUNT.status)
 
   return (
     <div className="space-y-5 py-5">
@@ -68,7 +158,7 @@ export default function DashboardPage() {
       )}
 
       {/* Banner: Supabase configurado mas sem profile */}
-      {isConfigured && !profile && !loading && (
+      {isConfigured && !profile && (
         <div
           className="rounded-xl px-4 py-3 space-y-1 text-xs font-medium"
           style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
@@ -117,16 +207,16 @@ export default function DashboardPage() {
               Contagem de Hoje
             </p>
           </div>
-          <StatusBadge variant="count" status={isLive ? 'not_started' : MOCK_TODAY_COUNT.status} />
+          <StatusBadge variant="count" status={sessionStatus} />
         </div>
 
         <div className="space-y-2">
           <div className="flex justify-between items-baseline">
             <span className="text-xs font-bold" style={{ color: 'var(--foreground)' }}>
-              Progresso por áreas
+              Progresso por itens
             </span>
             <span className="text-[10px] font-bold" style={{ color: 'var(--muted)' }}>
-              {completedAreas} de {totalAreas} áreas concluídas
+              {completedItems} de {totalItems} itens contados
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -145,7 +235,7 @@ export default function DashboardPage() {
           style={{ backgroundColor: 'var(--brand)' }}
         >
           <ClipboardList className="w-4 h-4" />
-          {isLive ? 'Iniciar Contagem' : 'Visualizar Painel de Contagem'}
+          {activeSessionExist ? 'Continuar Contagem' : 'Iniciar Contagem'}
         </button>
       </div>
 
@@ -172,24 +262,21 @@ export default function DashboardPage() {
             {displayAreas.map((area: any) => (
               <div
                 key={area.id}
-                className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.01)] transition-all duration-200 hover:border-gray-300"
+                className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.01)] transition-all duration-200 hover:border-gray-300 cursor-pointer"
+                onClick={() => router.push('/dashboard/counts')}
                 style={{ borderColor: 'var(--border)' }}
               >
                 <div className="flex items-center gap-3">
-                  {area.icon && (
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg bg-gray-50 border border-gray-100 shrink-0">
-                      {area.icon}
+                      {getAreaIcon(area.slug)}
                     </div>
-                  )}
                   <div>
                     <p className="text-xs font-bold" style={{ color: 'var(--foreground)' }}>
                       {area.name}
                     </p>
-                    {area.itemCount !== undefined && (
-                      <p className="text-[10px] font-medium" style={{ color: 'var(--muted)' }}>
-                        {area.itemCount} itens
-                      </p>
-                    )}
+                    <p className="text-[10px] font-medium" style={{ color: 'var(--muted)' }}>
+                      {activeSessionExist ? `${area.completedCount} / ${area.itemCount} contados` : (area.itemCount > 0 ? `${area.itemCount} itens` : '0 itens')}
+                    </p>
                   </div>
                 </div>
                 <StatusBadge variant="area" status={area.status ?? 'pending'} />
@@ -211,8 +298,8 @@ export default function DashboardPage() {
         <div className="grid grid-cols-3 gap-2">
           {[
             { label: 'Total Áreas', value: totalAreas, activeColor: 'var(--foreground)', bg: '#F7F6F3' },
-            { label: 'Concluídas', value: completedAreas, activeColor: '#16A34A', bg: '#F0FDF4' },
-            { label: 'Pendentes', value: totalAreas - completedAreas, activeColor: '#D97706', bg: '#FFFBEB' },
+            { label: 'Concluídas', value: completedAreasCount, activeColor: '#16A34A', bg: '#F0FDF4' },
+            { label: 'Pendentes', value: totalAreas - completedAreasCount, activeColor: '#D97706', bg: '#FFFBEB' },
           ].map(({ label, value, activeColor, bg }) => (
             <div
               key={label}
@@ -232,7 +319,7 @@ export default function DashboardPage() {
         <div className="space-y-2 pt-3.5 border-t" style={{ borderColor: 'var(--border)' }}>
           <div className="flex justify-between items-center text-xs">
             <span className="font-bold uppercase tracking-wide text-[10px]" style={{ color: 'var(--muted)' }}>
-              Taxa de Conclusão Geral
+              Taxa de Conclusão Geral (Itens)
             </span>
             <span className="font-extrabold" style={{ color: 'var(--brand)' }}>
               {progress}%
@@ -273,13 +360,16 @@ export default function DashboardPage() {
                     {entry.date ?? new Date(entry.created_at).toLocaleDateString('pt-BR')}
                   </p>
                   <p className="text-[10px] font-semibold mt-0.5" style={{ color: 'var(--muted)' }}>
-                    {entry.operator ?? '—'}
-                    {entry.areasCompleted !== undefined && ` · ${entry.areasCompleted}/${entry.totalAreas} áreas`}
+                    {entry.operator ?? (entry.started_by ? 'Operador' : '—')}
+                    {entry.status === 'completed' ? ' · Concluída' : ' · Em Andamento'}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge variant="count" status={entry.status ?? 'not_started'} />
-                  <button className="p-1 rounded-lg hover:bg-gray-50 transition cursor-pointer">
+                  <button
+                    onClick={() => router.push('/dashboard/counts')}
+                    className="p-1 rounded-lg hover:bg-gray-50 transition cursor-pointer"
+                  >
                     <ChevronRight className="w-4 h-4" style={{ color: 'var(--muted)' }} />
                   </button>
                 </div>
@@ -311,10 +401,10 @@ export default function DashboardPage() {
         
         <div className="space-y-1">
           <p className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-            Aguardando lista de insumos
+            Lista real de insumos
           </p>
           <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
-            Cadastre ou importe os itens que farão parte da contagem da loja.
+            O catálogo real com {isLive ? 'todos os 223' : 'vários'} itens está ativado e pronto no Supabase!
           </p>
         </div>
 
@@ -323,7 +413,7 @@ export default function DashboardPage() {
           className="w-full py-3 rounded-xl border font-bold text-xs uppercase tracking-wider transition-all hover:bg-gray-50 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
           style={{ borderColor: 'var(--brand)', color: 'var(--brand)', backgroundColor: 'transparent' }}
         >
-          Preparar Cadastro
+          Visualizar Cadastro
         </button>
       </div>
 

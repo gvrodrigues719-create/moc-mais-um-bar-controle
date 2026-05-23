@@ -1,6 +1,6 @@
 # Fase 2 — Supabase: Estrutura de Banco e Autenticação
 
-**Status:** Estrutura criada localmente — aguardando projeto Supabase dedicado  
+**Status:** Estrutura conectada ao projeto Supabase dedicado `maisumbar_controle`  
 **Data:** 2026-05-23
 
 ---
@@ -17,8 +17,8 @@ Esta fase não cadastra itens reais — apenas prepara a infraestrutura.
 ### Autenticação
 - `lib/supabase/client.ts` — Cliente browser (`@supabase/ssr`)
 - `lib/supabase/server.ts` — Cliente server-side (Server Components, Server Actions)
-- `lib/supabase/middleware.ts` — Refresh de sessão e helper de redirecionamento
-- `middleware.ts` — Middleware Next.js: protege rotas `/dashboard/*`, redireciona para `/login`
+- `lib/supabase/proxy.ts` — Refresh de sessão e helper de redirecionamento
+- `proxy.ts` — Proxy Next.js 16: protege rotas `/dashboard/*`, redireciona para `/login`
 - `app/actions/auth.ts` — Server Actions: `logoutAction`, `getSessionAction`
 - `app/login/page.tsx` — Login real com `supabase.auth.signInWithPassword` (com fallback local)
 - `app/dashboard/layout.tsx` — Verificação de sessão real; logout com `signOut`
@@ -59,85 +59,69 @@ Esta fase não cadastra itens reais — apenas prepara a infraestrutura.
 
 ---
 
-## Como criar o projeto Supabase dedicado
+## Projeto Supabase dedicado
 
-> ⚠️ Criar um projeto NOVO e separado. Nunca reutilizar o Supabase de outro projeto.
+**Projeto:** `maisumbar_controle`  
+**Project Ref:** `ehuodergymmzikxvzmbw`  
+**URL:** `https://ehuodergymmzikxvzmbw.supabase.co`  
+**Region:** South America (São Paulo)
 
-1. Acesse [supabase.com](https://supabase.com) e faça login
-2. Clique em **New Project**
-3. Preencha:
-   - **Name:** `moc-mais-um-bar`
-   - **Database Password:** senha forte (guardar em local seguro)
-   - **Region:** South America (São Paulo) — `sa-east-1`
-4. Aguarde a criação (~2 min)
-5. Acesse **Project Settings → API**
-6. Copie:
-   - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
-   - `anon public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`
+> ⚠️ Este projeto Supabase é exclusivo do +1 Bar. Nunca reutilizar credenciais de outro projeto.
 
 ---
 
-## Como aplicar a migration manualmente
+## Como aplicar o schema e o seed
 
-No painel do Supabase:
+Os arquivos em `supabase/sql-editor/` são formatados para execução manual no painel do Supabase.  
+Execute-os **em ordem**, cada um numa query separada:
 
-1. Acesse **SQL Editor**
-2. Clique em **New query**
-3. Cole o conteúdo de `supabase/migrations/202605230001_initial_moc_mais_um_bar.sql`
-4. Clique em **Run**
+### 1. Schema completo
 
-Verificar se todas as tabelas apareceram em **Table Editor**.
+1. Acesse **SQL Editor → New query**
+2. Cole o conteúdo de `supabase/sql-editor/01_initial_schema.sql`
+3. Clique em **Run**
+4. Verifique que todas as tabelas aparecem em **Table Editor**
 
----
-
-## Como rodar o seed
-
-Após aplicar a migration:
+### 2. Seed (loja e áreas)
 
 1. No **SQL Editor**, abra nova query
-2. Cole o conteúdo de `supabase/seed.sql`
+2. Cole o conteúdo de `supabase/sql-editor/02_seed_basic_store_and_areas.sql`
 3. Clique em **Run**
+4. O script exibe os registros criados ao final
 
-Verificar em **Table Editor → stores** se a loja `+1 Bar` foi criada.  
-Verificar em **Table Editor → count_areas** se as 6 áreas foram criadas.
+Verificar em **Table Editor → stores**: loja `+1 Bar` com `slug = 'mais-um-bar'`.  
+Verificar em **Table Editor → count_areas**: 6 áreas (Bar, Cozinha, Estoque Seco, Bebidas, Freezer/Câmara, Descartáveis).
 
----
+### 3. Primeiro usuário admin
 
-## Como criar o primeiro usuário admin
+1. Vá em **Authentication → Users → Add user → Create new user**
+2. Preencha email e senha; clique em **Create user**
+3. Copie o `UID` da coluna da tabela
+4. Abra `supabase/sql-editor/03_create_first_admin_profile_template.sql`
+5. Substitua os 3 placeholders:
+   - `COLE_AQUI_AUTH_USER_ID` → UID copiado
+   - `COLE_AQUI_NOME` → nome do administrador
+   - `COLE_AQUI_EMAIL` → e-mail do administrador
+6. Cole no **SQL Editor** e clique em **Run**
 
-1. No painel do Supabase, vá em **Authentication → Users**
-2. Clique em **Add user → Create new user**
-3. Preencha email e senha
-4. Após criar, copie o `User UID`
-5. No **SQL Editor**, execute:
-
-```sql
-INSERT INTO profiles (id, store_id, name, email, role)
-VALUES (
-    '<USER_UID>',
-    '00000000-0000-0000-0000-000000000001',
-    'Seu Nome',
-    'seu@email.com',
-    'admin'
-);
-```
-
-Substitua `<USER_UID>` pelo UUID do usuário criado.
+> ⚠️ Não salvar o arquivo com dados reais. Preencher apenas na hora de executar.
 
 ---
 
 ## Variáveis de ambiente a configurar
 
-Criar `.env.local` na raiz do projeto (nunca commitar):
+Criar `.env.local` na raiz do projeto a partir do `.env.example` (nunca commitar):
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=https://<seu-projeto>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+NEXT_PUBLIC_SUPABASE_URL=https://ehuodergymmzikxvzmbw.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<chave-anon-do-projeto>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key-nunca-expor>
 NEXT_PUBLIC_APP_NAME="MOC +1 Bar Controle"
 NEXT_PUBLIC_STORE_NAME="+1 Bar"
 ```
+
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — chave publicável (`sb_publishable_*`), segura para o client
+- `SUPABASE_SERVICE_ROLE_KEY` — chave secreta (`sb_secret_*`), **somente server-side, nunca no client**
 
 ---
 

@@ -255,7 +255,7 @@ export default function DashboardPage() {
             <span className="text-[10px] font-semibold text-gray-500">
               {activeSessionExist 
                 ? `${completedItems} de ${totalItems} itens contados` 
-                : 'Contagem ainda não iniciada'}
+                : 'Base pronta'}
             </span>
           </div>
           
@@ -269,7 +269,9 @@ export default function DashboardPage() {
           </div>
 
           <p className="text-[10px] font-bold text-gray-400 mt-1">
-            {totalItems} itens ativos e prontos para a contagem
+            {activeSessionExist 
+              ? `${totalItems} itens ativos e prontos para a contagem`
+              : `${totalItems} itens disponíveis para contagem · Pronto para iniciar`}
           </p>
         </div>
 
@@ -303,45 +305,52 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid gap-2">
-            {displayAreas.map((area: any) => {
-              const AreaIcon = getAreaIcon(area.slug || area.id)
-              
-              const areaTotal = activeSessionExist 
-                ? area.itemCount 
-                : (isLive ? area.itemCount : (DEMO_AREA_COUNTS[area.id] ?? area.itemCount))
+            {displayAreas
+              .filter((area: any) => {
+                const areaTotal = activeSessionExist 
+                  ? area.itemCount 
+                  : (isLive ? area.itemCount : (DEMO_AREA_COUNTS[area.id] ?? area.itemCount))
+                return areaTotal > 0
+              })
+              .map((area: any) => {
+                const AreaIcon = getAreaIcon(area.slug || area.id)
+                
+                const areaTotal = activeSessionExist 
+                  ? area.itemCount 
+                  : (isLive ? area.itemCount : (DEMO_AREA_COUNTS[area.id] ?? area.itemCount))
 
-              const subtitle = activeSessionExist
-                ? `${area.completedCount} de ${areaTotal} contados`
-                : `${areaTotal} itens disponíveis`
+                const subtitle = activeSessionExist
+                  ? `${area.completedCount} de ${areaTotal} contados`
+                  : `${areaTotal} itens disponíveis`
 
-              const status = activeSessionExist 
-                ? area.status 
-                : 'pending'
+                const status = activeSessionExist 
+                  ? area.status 
+                  : 'pending'
 
-              return (
-                <div
-                  key={area.id}
-                  className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-sm transition-all duration-150 hover:border-gray-300 active:scale-[0.99] cursor-pointer"
-                  onClick={() => router.push('/dashboard/counts')}
-                  style={{ borderColor: 'var(--border)' }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-50 border border-gray-100 shrink-0">
-                      <AreaIcon className="w-4.5 h-4.5" style={{ color: 'var(--brand)' }} />
+                return (
+                  <div
+                    key={area.id}
+                    className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-sm transition-all duration-150 hover:border-gray-300 active:scale-[0.99] cursor-pointer"
+                    onClick={() => router.push('/dashboard/counts')}
+                    style={{ borderColor: 'var(--border)' }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-50 border border-gray-100 shrink-0">
+                        <AreaIcon className="w-4.5 h-4.5" style={{ color: 'var(--brand)' }} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-900">
+                          {area.name}
+                        </h4>
+                        <p className="text-[10px] font-medium text-gray-400 mt-0.5">
+                          {subtitle}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-gray-900">
-                        {area.name}
-                      </h4>
-                      <p className="text-[10px] font-medium text-gray-400 mt-0.5">
-                        {subtitle}
-                      </p>
-                    </div>
+                    <StatusBadge variant="area" status={status ?? 'pending'} />
                   </div>
-                  <StatusBadge variant="area" status={status ?? 'pending'} />
-                </div>
-              )
-            })}
+                )
+              })}
           </div>
         )}
       </div>
@@ -441,37 +450,37 @@ export default function DashboardPage() {
 
       {/* Card Administrativo (Catálogo de Insumos) */}
       <div
-        className="rounded-2xl p-5 border bg-white shadow-sm space-y-4 border-l-4"
+        className="rounded-xl p-4 border bg-white shadow-sm border-l-2 space-y-3"
         style={{
           borderColor: 'var(--border)',
-          borderLeftColor: 'var(--brand)',
+          borderLeftColor: 'var(--border)',
         }}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ClipboardList className="w-4.5 h-4.5" style={{ color: 'var(--brand)' }} />
-            <h3 className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            <ClipboardList className="w-4 h-4 text-gray-400" />
+            <h3 className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
               Catálogo de Insumos
             </h3>
           </div>
-          <span className="text-[9px] font-extrabold uppercase tracking-widest bg-green-50 border border-green-200 text-green-700 px-2 py-0.5 rounded-md">
+          <span className="text-[8px] font-extrabold uppercase tracking-widest bg-gray-50 border border-gray-100 text-gray-400 px-2 py-0.5 rounded">
             Ativo
           </span>
         </div>
         
-        <div className="space-y-1">
-          <h4 className="text-sm font-bold text-gray-900">
-            Lista de Itens
+        <div className="space-y-0.5">
+          <h4 className="text-xs font-bold text-gray-700">
+            Catálogo ativo
           </h4>
-          <p className="text-xs leading-relaxed text-gray-500">
-            223 itens ativos e prontos para a contagem da loja.
+          <p className="text-[11px] leading-relaxed text-gray-400">
+            {totalItems} itens cadastrados para a contagem.
           </p>
         </div>
 
         <button
           onClick={() => router.push('/dashboard/admin/items')}
-          className="w-full py-3 rounded-xl border font-bold text-xs uppercase tracking-wider transition-all hover:bg-gray-50 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
-          style={{ borderColor: 'var(--brand)', color: 'var(--brand)', backgroundColor: 'transparent' }}
+          className="w-full py-2.5 rounded-xl border font-bold text-xs uppercase tracking-wider transition-all hover:bg-gray-50 active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
+          style={{ borderColor: 'var(--border)', color: 'var(--muted)', backgroundColor: 'transparent' }}
         >
           Visualizar cadastro
         </button>

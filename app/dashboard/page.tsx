@@ -259,7 +259,13 @@ export default function DashboardPage() {
             </span>
           </div>
           
-          <div className="flex items-center gap-3">
+          {!activeSessionExist && (
+            <div className="text-[10px] font-bold text-gray-700 mt-0.5">
+              {totalItems} itens disponíveis para contagem
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 mt-1.5">
             <div className="flex-1">
               <ProgressBar value={activeSessionExist ? progress : 0} />
             </div>
@@ -271,7 +277,7 @@ export default function DashboardPage() {
           <p className="text-[10px] font-bold text-gray-400 mt-1">
             {activeSessionExist 
               ? `${totalItems} itens ativos e prontos para a contagem`
-              : `${totalItems} itens disponíveis para contagem · Pronto para iniciar`}
+              : 'Pronto para iniciar a contagem da loja'}
           </p>
         </div>
 

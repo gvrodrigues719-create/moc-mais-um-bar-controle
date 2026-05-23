@@ -115,6 +115,7 @@ export default function AdminPage() {
       status: 'Ativo',
       statusStyle: 'bg-green-50 text-green-700 border-green-200',
       infoText: `${areaCount} áreas cadastradas no banco`,
+      route: '/dashboard/admin/areas',
     },
     {
       id: 'items',
@@ -126,6 +127,7 @@ export default function AdminPage() {
       infoText: isLive 
         ? `${stats.totalItems} itens cadastrados` 
         : `${MOCK_ITEMS.length} itens (demonstração)`,
+      route: '/dashboard/admin/items',
     },
     {
       id: 'users',
@@ -135,6 +137,7 @@ export default function AdminPage() {
       status: 'Ativo',
       statusStyle: 'bg-green-50 text-green-700 border-green-200',
       infoText: isLive ? '1 usuário ativo' : 'Visualização de perfis',
+      route: '/dashboard/admin/users',
     },
     {
       id: 'sessions',
@@ -146,6 +149,7 @@ export default function AdminPage() {
       infoText: isLive 
         ? `${stats.totalSessions} sessões (${stats.activeSessions} em andamento, ${stats.completedSessions} concluídas)`
         : 'Sessões de contagem ativas',
+      route: '/dashboard/admin/sessions',
     },
   ]
 
@@ -185,9 +189,10 @@ export default function AdminPage() {
         {ADMIN_BLOCKS.map(block => {
           const Icon = block.icon
           return (
-            <div
+            <button
               key={block.id}
-              className="rounded-xl p-3.5 border flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.01)] transition-all duration-200 hover:border-gray-300"
+              onClick={() => router.push(block.route)}
+              className="w-full rounded-xl p-3.5 border flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.01)] transition-all duration-200 hover:border-gray-300 active:scale-[0.99] cursor-pointer text-left"
               style={{
                 borderColor: 'var(--border)',
               }}
@@ -214,7 +219,7 @@ export default function AdminPage() {
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 shrink-0 ml-2" style={{ color: 'var(--muted)' }} />
-            </div>
+            </button>
           )
         })}
       </div>

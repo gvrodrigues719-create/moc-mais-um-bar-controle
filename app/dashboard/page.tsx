@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ClipboardList, Clock, CheckCircle2, ChevronRight,
   Store, AlertCircle, Loader2, WifiOff,
+  Wine, Utensils, Package, CupSoda, Snowflake, PackageOpen, Folder,
 } from 'lucide-react'
 import { useStoreData } from '@/hooks/useStoreData'
 import { USER_ROLE_LABELS, COUNT_STATUS_LABELS, type CountSession } from '@/lib/types'
@@ -14,17 +15,20 @@ import { createClient } from '@/lib/supabase/client'
 import { getActiveSessionAction } from '@/app/actions/count'
 import { MOCK_CURRENT_USER, MOCK_TODAY_COUNT, MOCK_AREAS, MOCK_HISTORY } from '@/mocks/maisUmBar'
 
-// Função utilitária para mapear slug da área física para emoji
-export function getAreaIcon(slug: string): string {
-  const icons: Record<string, string> = {
-    'bar': '🍸',
-    'cozinha': '🍳',
-    'estoque-seco': '📦',
-    'bebidas': '🍹',
-    'freezer-camara': '🥶',
-    'descartaveis': '🥤'
+// Mapeia slug ou id de área para ícones profissionais do Lucide
+export function getAreaIcon(slugOrId: string) {
+  const clean = slugOrId.toLowerCase().replace('area-', '')
+  const icons: Record<string, any> = {
+    'bar': Wine,
+    'cozinha': Utensils,
+    'estoque': Package,
+    'estoque-seco': Package,
+    'bebidas': CupSoda,
+    'freezer': Snowflake,
+    'freezer-camara': Snowflake,
+    'descartaveis': PackageOpen
   }
-  return icons[slug] || '📁'
+  return icons[clean] || Folder
 }
 
 function greeting() {
@@ -40,17 +44,14 @@ function todayLabel() {
   })
 }
 
-function sessionStatusLabel(s: CountSession) {
-  return COUNT_STATUS_LABELS[s.status] ?? s.status
-}
-
 export default function DashboardPage() {
   const router = useRouter()
   const { loading, isConfigured, profile, store, areas, recentSessions, error } = useStoreData()
 
-  // Estado local para carregar sessão de contagem ativa
+  // Estado local para carregar sessão de contagem ativa e itens do banco
   const [activeSession, setActiveSession] = useState<CountSession | null>(null)
   const [sessionItems, setSessionItems] = useState<any[]>([])
+  const [dbActiveItems, setDbActiveItems] = useState<{ id: string; area_id: string | null }[]>([])
   const [loadingSession, setLoadingSession] = useState(true)
 
   useEffect(() => {
@@ -59,27 +60,39 @@ export default function DashboardPage() {
       return
     }
 
-    async function loadActiveSession() {
+    const storeId = profile.store_id
+
+    async function loadData() {
       try {
+        const supabase = createClient()
         const session = await getActiveSessionAction()
         setActiveSession(session)
+        
         if (session) {
-          const supabase = createClient()
           const { data: items } = await supabase
             .from('count_session_items')
             .select('id, status, area_id')
             .eq('session_id', session.id)
 
           setSessionItems(items || [])
+        } else {
+          // Quando não há sessão ativa, carrega a lista de itens ativos do Supabase
+          const { data: items } = await supabase
+            .from('count_items')
+            .select('id, area_id')
+            .eq('store_id', storeId)
+            .eq('active', true)
+
+          setDbActiveItems(items || [])
         }
       } catch (err) {
-        console.error('Erro ao carregar sessão ativa na Home:', err)
+        console.error('Erro ao carregar dados na Home:', err)
       } finally {
         setLoadingSession(false)
       }
     }
 
-    loadActiveSession()
+    loadData()
   }, [isConfigured, profile])
 
   if (loading || loadingSession) {
@@ -99,9 +112,25 @@ export default function DashboardPage() {
 
   // Calcular progresso real de itens
   const activeSessionExist = isLive && activeSession !== null
-  const totalItems = activeSessionExist ? sessionItems.length : (isLive ? 0 : 223)
-  const completedItems = activeSessionExist ? sessionItems.filter(x => x.status !== 'pending').length : (isLive ? 0 : 45)
-  const progress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0
+  const totalItems = activeSessionExist 
+    ? sessionItems.length 
+    : (isLive ? dbActiveItems.length : 223)
+  const completedItems = activeSessionExist 
+    ? sessionItems.filter(x => x.status !== 'pending').length 
+    : 0
+  const progress = activeSessionExist && totalItems > 0 
+    ? Math.round((completedItems / totalItems) * 100) 
+    : 0
+
+  // Constante offline para manter congruência com os 223 itens cadastrados nas áreas
+  const DEMO_AREA_COUNTS: Record<string, number> = {
+    'area-bar': 17,
+    'area-cozinha': 9,
+    'area-estoque': 77,
+    'area-bebidas': 0,
+    'area-freezer': 79,
+    'area-descartaveis': 41,
+  }
 
   // Progresso das áreas
   const displayAreas = isLive
@@ -118,33 +147,41 @@ export default function DashboardPage() {
             status,
           }
         }
+        // Sem sessão ativa: busca quantidade de itens ativos no Supabase
+        const areaTotal = dbActiveItems.filter(x => x.area_id === area.id).length
         return {
           ...area,
-          itemCount: 0,
+          itemCount: areaTotal,
           completedCount: 0,
           status: 'pending' as const,
         }
       })
     : MOCK_AREAS.map(area => {
-        const areaTotal = area.itemCount
-        const status = area.status ?? 'pending'
-        const areaCompleted = status === 'completed' ? areaTotal : (status === 'in_progress' ? Math.round(areaTotal / 2) : 0)
+        const areaTotal = DEMO_AREA_COUNTS[area.id] ?? area.itemCount
         return {
           ...area,
-          completedCount: areaCompleted,
-          status,
+          slug: area.id.replace('area-', ''), // Garante compatibilidade de tipo
+          itemCount: areaTotal,
+          completedCount: 0,
+          status: 'pending' as const,
         }
       })
 
   const totalAreas = displayAreas.length
-  const completedAreasCount = displayAreas.filter(x => x.status === 'completed').length
-  const areasInProgressCount = displayAreas.filter(x => x.status === 'in_progress').length
-  const pendingAreasCount = displayAreas.filter(x => x.status === 'pending').length
+  const completedAreasCount = activeSessionExist 
+    ? displayAreas.filter(x => x.status === 'completed').length 
+    : 0
+  const areasInProgressCount = activeSessionExist 
+    ? displayAreas.filter(x => x.status === 'in_progress').length 
+    : 0
+  const pendingAreasCount = activeSessionExist 
+    ? displayAreas.filter(x => x.status === 'pending').length 
+    : totalAreas
 
-  const sessionStatus = activeSessionExist ? 'in_progress' : (isLive ? 'not_started' : MOCK_TODAY_COUNT.status)
+  const sessionStatus = activeSessionExist ? 'in_progress' : 'not_started'
 
   return (
-    <div className="space-y-5 py-5">
+    <div className="space-y-5 py-5 max-w-lg mx-auto">
 
       {/* Banner: Supabase não configurado */}
       {!isConfigured && (
@@ -153,7 +190,7 @@ export default function DashboardPage() {
           style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
         >
           <WifiOff className="w-4 h-4 shrink-0" />
-          Supabase não configurado — exibindo dados de demonstração.
+          Modo demonstração — offline
         </div>
       )}
 
@@ -164,17 +201,17 @@ export default function DashboardPage() {
           style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
         >
           <p className="font-bold">Usuário sem perfil operacional.</p>
-          <p>Usuário autenticado, mas sem perfil vinculado no banco. Configure o perfil em Supabase → tabela profiles.</p>
+          <p>Configure o perfil em Supabase → tabela profiles.</p>
         </div>
       )}
 
       {/* Header operacional */}
       <div
-        className="rounded-2xl p-4 border flex flex-col gap-2 shadow-[0_2px_8px_rgba(0,0,0,0.015)] bg-white"
+        className="rounded-2xl p-4 border flex flex-col gap-2 shadow-sm bg-white"
         style={{ borderColor: 'var(--border)' }}
       >
         <div className="flex items-center justify-between">
-          <span className="text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded" style={{ backgroundColor: 'var(--brand-light)', color: 'var(--brand)' }}>
+          <span className="text-[9px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-md" style={{ backgroundColor: 'var(--brand-light)', color: 'var(--brand)' }}>
             {USER_ROLE_LABELS[displayRole]}
           </span>
           <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
@@ -186,7 +223,7 @@ export default function DashboardPage() {
           <p className="text-[11px] font-semibold" style={{ color: 'var(--muted)' }}>
             {greeting()},
           </p>
-          <h2 className="text-xl font-black tracking-tight" style={{ color: 'var(--foreground)' }}>
+          <h2 className="text-lg font-black tracking-tight" style={{ color: 'var(--foreground)' }}>
             {displayName}
           </h2>
           <p className="text-[10px] uppercase font-bold tracking-wider pt-0.5" style={{ color: 'var(--muted)', opacity: 0.8 }}>
@@ -197,41 +234,48 @@ export default function DashboardPage() {
 
       {/* Card: Contagem de Hoje */}
       <div
-        className="rounded-2xl p-5 border-2 space-y-5 bg-white shadow-[0_4px_12px_rgba(0,0,0,0.02)]"
-        style={{ borderColor: 'var(--brand)' }}
+        className="rounded-2xl p-5 border bg-white shadow-md border-t-[3px] space-y-5"
+        style={{ borderColor: 'var(--border)', borderTopColor: 'var(--brand)' }}
       >
         <div className="flex items-center justify-between border-b pb-3.5" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-2">
             <ClipboardList className="w-5 h-5" style={{ color: 'var(--brand)' }} />
-            <p className="text-xs font-black uppercase tracking-widest" style={{ color: 'var(--foreground)' }}>
+            <h3 className="text-xs font-black uppercase tracking-wider" style={{ color: 'var(--foreground)' }}>
               Contagem de Hoje
-            </p>
+            </h3>
           </div>
           <StatusBadge variant="count" status={sessionStatus} />
         </div>
 
         <div className="space-y-2">
           <div className="flex justify-between items-baseline">
-            <span className="text-xs font-bold" style={{ color: 'var(--foreground)' }}>
-              Progresso por itens
+            <span className="text-xs font-bold text-gray-700">
+              {activeSessionExist ? 'Progresso da contagem' : 'Status'}
             </span>
-            <span className="text-[10px] font-bold" style={{ color: 'var(--muted)' }}>
-              {completedItems} de {totalItems} itens contados
+            <span className="text-[10px] font-semibold text-gray-500">
+              {activeSessionExist 
+                ? `${completedItems} de ${totalItems} itens contados` 
+                : 'Contagem ainda não iniciada'}
             </span>
           </div>
+          
           <div className="flex items-center gap-3">
             <div className="flex-1">
-              <ProgressBar value={progress} />
+              <ProgressBar value={activeSessionExist ? progress : 0} />
             </div>
-            <span className="text-base font-black tracking-tight shrink-0" style={{ color: 'var(--brand)' }}>
-              {progress}%
+            <span className="text-sm font-black tracking-tight shrink-0" style={{ color: 'var(--brand)' }}>
+              {activeSessionExist ? `${progress}%` : '0%'}
             </span>
           </div>
+
+          <p className="text-[10px] font-bold text-gray-400 mt-1">
+            {totalItems} itens ativos e prontos para a contagem
+          </p>
         </div>
 
         <button
           onClick={() => router.push('/dashboard/counts')}
-          className="w-full py-3.5 rounded-xl text-white font-extrabold text-xs uppercase tracking-wider transition-all hover:bg-opacity-95 active:scale-[0.98] shadow-[0_2px_6px_rgba(124,45,53,0.2)] flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full py-3 rounded-xl text-white font-extrabold text-xs uppercase tracking-wider transition-all hover:bg-opacity-95 active:scale-[0.98] shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
           style={{ backgroundColor: 'var(--brand)' }}
         >
           <ClipboardList className="w-4 h-4" />
@@ -241,59 +285,75 @@ export default function DashboardPage() {
 
       {/* Áreas da Loja */}
       <div className="space-y-2.5">
-        <p className="text-[10px] font-bold uppercase tracking-[0.15em] pl-1" style={{ color: 'var(--muted)' }}>
-          Áreas da Loja
-        </p>
+        <h3 className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-400 pl-1">
+          Áreas da loja
+        </h3>
 
         {displayAreas.length === 0 ? (
           <div
-            className="rounded-2xl p-6 border text-center space-y-1 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.01)]"
+            className="rounded-2xl p-6 border text-center space-y-1 bg-white shadow-sm"
             style={{ borderColor: 'var(--border)' }}
           >
             <p className="text-xs font-bold" style={{ color: 'var(--foreground)' }}>
               Nenhuma área cadastrada
             </p>
             <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
-              As áreas serão cadastradas via Supabase após aplicar o seed inicial.
+              As áreas serão carregadas via Supabase.
             </p>
           </div>
         ) : (
           <div className="grid gap-2">
-            {displayAreas.map((area: any) => (
-              <div
-                key={area.id}
-                className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.01)] transition-all duration-200 hover:border-gray-300 cursor-pointer"
-                onClick={() => router.push('/dashboard/counts')}
-                style={{ borderColor: 'var(--border)' }}
-              >
-                <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg bg-gray-50 border border-gray-100 shrink-0">
-                      {getAreaIcon(area.slug)}
+            {displayAreas.map((area: any) => {
+              const AreaIcon = getAreaIcon(area.slug || area.id)
+              
+              const areaTotal = activeSessionExist 
+                ? area.itemCount 
+                : (isLive ? area.itemCount : (DEMO_AREA_COUNTS[area.id] ?? area.itemCount))
+
+              const subtitle = activeSessionExist
+                ? `${area.completedCount} de ${areaTotal} contados`
+                : `${areaTotal} itens disponíveis`
+
+              const status = activeSessionExist 
+                ? area.status 
+                : 'pending'
+
+              return (
+                <div
+                  key={area.id}
+                  className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-sm transition-all duration-150 hover:border-gray-300 active:scale-[0.99] cursor-pointer"
+                  onClick={() => router.push('/dashboard/counts')}
+                  style={{ borderColor: 'var(--border)' }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-50 border border-gray-100 shrink-0">
+                      <AreaIcon className="w-4.5 h-4.5" style={{ color: 'var(--brand)' }} />
                     </div>
-                  <div>
-                    <p className="text-xs font-bold" style={{ color: 'var(--foreground)' }}>
-                      {area.name}
-                    </p>
-                    <p className="text-[10px] font-medium" style={{ color: 'var(--muted)' }}>
-                      {activeSessionExist ? `${area.completedCount} / ${area.itemCount} contados` : (area.itemCount > 0 ? `${area.itemCount} itens` : '0 itens')}
-                    </p>
+                    <div>
+                      <h4 className="text-xs font-bold text-gray-900">
+                        {area.name}
+                      </h4>
+                      <p className="text-[10px] font-medium text-gray-400 mt-0.5">
+                        {subtitle}
+                      </p>
+                    </div>
                   </div>
+                  <StatusBadge variant="area" status={status ?? 'pending'} />
                 </div>
-                <StatusBadge variant="area" status={area.status ?? 'pending'} />
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
 
-      {/* Progresso Geral */}
+      {/* Resumo Geral */}
       <div
-        className="rounded-2xl p-5 border bg-white shadow-[0_2px_8px_rgba(0,0,0,0.015)] space-y-4"
+        className="rounded-2xl p-5 border bg-white shadow-sm space-y-4"
         style={{ borderColor: 'var(--border)' }}
       >
-        <p className="text-[10px] font-black uppercase tracking-[0.15em]" style={{ color: 'var(--muted)' }}>
-          Visão Geral do Painel
-        </p>
+        <h3 className="text-[10px] font-black uppercase tracking-[0.12em] text-gray-400">
+          Resumo geral
+        </h3>
         
         <div className="grid grid-cols-3 gap-2">
           {[
@@ -303,13 +363,13 @@ export default function DashboardPage() {
           ].map(({ label, value, activeColor, bg }) => (
             <div
               key={label}
-              className="rounded-xl p-3.5 text-center border transition-all duration-200"
+              className="rounded-xl p-3 text-center border transition"
               style={{ backgroundColor: bg, borderColor: 'var(--border)' }}
             >
-              <p className="text-2xl font-black tracking-tight" style={{ color: activeColor }}>
+              <p className="text-xl font-black tracking-tight" style={{ color: activeColor }}>
                 {value}
               </p>
-              <p className="text-[9px] font-bold uppercase tracking-wider mt-1" style={{ color: 'var(--muted)' }}>
+              <p className="text-[9px] font-bold uppercase tracking-wider mt-1 text-gray-500">
                 {label}
               </p>
             </div>
@@ -318,8 +378,8 @@ export default function DashboardPage() {
 
         <div className="space-y-2 pt-3.5 border-t" style={{ borderColor: 'var(--border)' }}>
           <div className="flex justify-between items-center text-xs">
-            <span className="font-bold uppercase tracking-wide text-[10px]" style={{ color: 'var(--muted)' }}>
-              Taxa de Conclusão Geral (Itens)
+            <span className="font-bold uppercase tracking-wide text-[10px] text-gray-400">
+              Conclusão geral
             </span>
             <span className="font-extrabold" style={{ color: 'var(--brand)' }}>
               {progress}%
@@ -331,19 +391,19 @@ export default function DashboardPage() {
 
       {/* Histórico Recente */}
       <div className="space-y-2.5">
-        <p className="text-[10px] font-bold uppercase tracking-[0.15em] pl-1" style={{ color: 'var(--muted)' }}>
-          Histórico Recente
-        </p>
+        <h3 className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-400 pl-1">
+          Histórico recente
+        </h3>
 
         {isLive && recentSessions.length === 0 ? (
           <div
-            className="rounded-2xl p-6 border text-center bg-white shadow-[0_1px_3px_rgba(0,0,0,0.015)] space-y-1"
+            className="rounded-2xl p-6 border text-center bg-white shadow-sm space-y-1"
             style={{ borderColor: 'var(--border)' }}
           >
-            <p className="text-xs font-bold" style={{ color: 'var(--foreground)' }}>
+            <p className="text-xs font-bold text-gray-800">
               Nenhuma contagem registrada ainda
             </p>
-            <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
+            <p className="text-[11px] text-gray-400">
               O histórico aparecerá após a primeira contagem finalizada.
             </p>
           </div>
@@ -352,14 +412,14 @@ export default function DashboardPage() {
             {(isLive ? recentSessions : MOCK_HISTORY).map((entry: any) => (
               <div
                 key={entry.id}
-                className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-[0_1px_3px_rgba(0,0,0,0.015)]"
+                className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-sm"
                 style={{ borderColor: 'var(--border)' }}
               >
                 <div>
-                  <p className="text-xs font-bold" style={{ color: 'var(--foreground)' }}>
+                  <p className="text-xs font-bold text-gray-800">
                     {entry.date ?? new Date(entry.created_at).toLocaleDateString('pt-BR')}
                   </p>
-                  <p className="text-[10px] font-semibold mt-0.5" style={{ color: 'var(--muted)' }}>
+                  <p className="text-[10px] font-semibold text-gray-400 mt-0.5">
                     {entry.operator ?? (entry.started_by ? 'Operador' : '—')}
                     {entry.status === 'completed' ? ' · Concluída' : ' · Em Andamento'}
                   </p>
@@ -370,7 +430,7 @@ export default function DashboardPage() {
                     onClick={() => router.push('/dashboard/counts')}
                     className="p-1 rounded-lg hover:bg-gray-50 transition cursor-pointer"
                   >
-                    <ChevronRight className="w-4 h-4" style={{ color: 'var(--muted)' }} />
+                    <ChevronRight className="w-4 h-4 text-gray-400" />
                   </button>
                 </div>
               </div>
@@ -379,9 +439,9 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Card Administrativo */}
+      {/* Card Administrativo (Catálogo de Insumos) */}
       <div
-        className="rounded-2xl p-5 border bg-white shadow-[0_2px_8px_rgba(0,0,0,0.015)] space-y-4 border-l-4"
+        className="rounded-2xl p-5 border bg-white shadow-sm space-y-4 border-l-4"
         style={{
           borderColor: 'var(--border)',
           borderLeftColor: 'var(--brand)',
@@ -389,31 +449,31 @@ export default function DashboardPage() {
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4.5 h-4.5" style={{ color: 'var(--brand)' }} />
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em]" style={{ color: 'var(--muted)' }}>
-              Etapa Administrativa
-            </p>
+            <ClipboardList className="w-4.5 h-4.5" style={{ color: 'var(--brand)' }} />
+            <h3 className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              Catálogo de Insumos
+            </h3>
           </div>
-          <span className="text-[9px] font-extrabold uppercase tracking-widest bg-gray-50 border border-gray-200 text-gray-500 px-2 py-0.5 rounded">
-            Pendente
+          <span className="text-[9px] font-extrabold uppercase tracking-widest bg-green-50 border border-green-200 text-green-700 px-2 py-0.5 rounded-md">
+            Ativo
           </span>
         </div>
         
         <div className="space-y-1">
-          <p className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-            Lista real de insumos
-          </p>
-          <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
-            O catálogo real com {isLive ? 'todos os 223' : 'vários'} itens está ativado e pronto no Supabase!
+          <h4 className="text-sm font-bold text-gray-900">
+            Lista de Itens
+          </h4>
+          <p className="text-xs leading-relaxed text-gray-500">
+            223 itens ativos e prontos para a contagem da loja.
           </p>
         </div>
 
         <button
-          onClick={() => router.push('/dashboard/admin')}
+          onClick={() => router.push('/dashboard/admin/items')}
           className="w-full py-3 rounded-xl border font-bold text-xs uppercase tracking-wider transition-all hover:bg-gray-50 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
           style={{ borderColor: 'var(--brand)', color: 'var(--brand)', backgroundColor: 'transparent' }}
         >
-          Visualizar Cadastro
+          Visualizar cadastro
         </button>
       </div>
 

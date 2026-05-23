@@ -406,3 +406,155 @@ export async function createUserAction(data: {
     return { success: false, error: err.message || 'Erro inesperado no servidor.' }
   }
 }
+
+// ─── GERENCIAMENTO DE ÁREAS (ETAPA 5) ──────────────────────────────────────────
+
+export interface AdminAreaWithCounts {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  sort_order: number
+  active: boolean
+  total_items: number
+  active_items: number
+}
+
+export interface UpdateAreaData {
+  name: string
+  description: string | null
+  sort_order: number
+  active: boolean
+}
+
+/**
+ * Lista todas as áreas da loja com a contagem de itens totais e ativos vinculados.
+ * Ordena por sort_order e name (ambos ascendentes).
+ */
+export async function getAreasAction(): Promise<{
+  success: boolean
+  error?: string
+  areas: AdminAreaWithCounts[]
+}> {
+  const supabase = await createClient()
+  const ctx = await getAdminContext(supabase)
+  if (!ctx) return { success: false, error: 'Sem permissão de acesso.', areas: [] }
+
+  // 1. Buscar áreas da loja
+  const { data: areas, error: areasErr } = await supabase
+    .from('count_areas')
+    .select('id, name, slug, description, sort_order, active')
+    .eq('store_id', ctx.storeId)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (areasErr) return { success: false, error: areasErr.message, areas: [] }
+
+  // 2. Buscar itens da loja para contabilizar por área
+  const { data: items, error: itemsErr } = await supabase
+    .from('count_items')
+    .select('area_id, active')
+    .eq('store_id', ctx.storeId)
+
+  if (itemsErr) return { success: false, error: itemsErr.message, areas: [] }
+
+  // 3. Consolidar as contagens na memória (performance rápida para volume pequeno)
+  const countsMap: Record<string, { total: number; active: number }> = {}
+  for (const area of areas) {
+    countsMap[area.id] = { total: 0, active: 0 }
+  }
+
+  for (const item of items) {
+    if (item.area_id && countsMap[item.area_id]) {
+      countsMap[item.area_id].total++
+      if (item.active) {
+        countsMap[item.area_id].active++
+      }
+    }
+  }
+
+  const result: AdminAreaWithCounts[] = areas.map(area => ({
+    id: area.id,
+    name: area.name,
+    slug: area.slug,
+    description: area.description,
+    sort_order: area.sort_order,
+    active: area.active,
+    total_items: countsMap[area.id]?.total || 0,
+    active_items: countsMap[area.id]?.active || 0,
+  }))
+
+  return { success: true, areas: result }
+}
+
+/**
+ * Atualiza os dados de uma área.
+ * Bloqueia se o usuário não for admin.
+ * Bloqueia se houver sessão de contagem em andamento.
+ * Bloqueia inativação se a área possuir itens ativos vinculados.
+ */
+export async function updateAreaAction(
+  areaId: string,
+  data: UpdateAreaData
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient()
+  const ctx = await getAdminContext(supabase)
+  if (!ctx) return { success: false, error: 'Sem permissão de acesso.' }
+
+  // 1. Apenas administradores (admin) podem salvar alterações nas áreas
+  if (ctx.role !== 'admin') {
+    return { success: false, error: 'Apenas administradores podem editar áreas.' }
+  }
+
+  // 2. Segurança operacional: bloquear se houver contagem ativa em andamento
+  const { data: activeSessions } = await supabase
+    .from('count_sessions')
+    .select('id')
+    .eq('store_id', ctx.storeId)
+    .eq('status', 'in_progress')
+    .limit(1)
+
+  if (activeSessions && activeSessions.length > 0) {
+    return {
+      success: false,
+      error: 'Existe uma contagem em andamento. Finalize antes de editar áreas.',
+    }
+  }
+
+  // 3. Regra para inativar área: não permitir inativar se houver itens ativos vinculados
+  if (data.active === false) {
+    const { count, error: countErr } = await supabase
+      .from('count_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('area_id', areaId)
+      .eq('active', true)
+
+    if (countErr) return { success: false, error: countErr.message }
+
+    if (count && count > 0) {
+      return {
+        success: false,
+        error: 'Esta área possui itens ativos. Inative ou mova os itens antes de desativar a área.',
+      }
+    }
+  }
+
+  // 4. Atualizar área no banco (slug é excluído da atualização para segurança operacional)
+  const { error: updateErr } = await supabase
+    .from('count_areas')
+    .update({
+      name: data.name.trim(),
+      description: data.description ? data.description.trim() : null,
+      sort_order: data.sort_order,
+      active: data.active,
+    })
+    .eq('id', areaId)
+    .eq('store_id', ctx.storeId)
+
+  if (updateErr) return { success: false, error: updateErr.message }
+
+  // Nota: Não registramos operational_event nesta etapa porque 'area_updated' não existe no enum de banco
+
+  return { success: true }
+}
+

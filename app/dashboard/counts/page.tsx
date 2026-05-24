@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, ClipboardList, Loader2, Search, Check,
-  AlertCircle, X, Save
+  AlertCircle, X, Save,
+  Coffee, Package, GlassWater, Snowflake, MapPin
 } from 'lucide-react'
 import { useStoreData } from '@/hooks/useStoreData'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -18,17 +19,16 @@ import {
 } from '@/app/actions/count'
 import type { CountSession, AreaStatus } from '@/lib/types'
 
-// Função utilitária para mapear slug da área física para emoji
-export function getAreaIcon(slug: string): string {
-  const icons: Record<string, string> = {
-    'bar': '🍸',
-    'cozinha': '🍳',
-    'estoque-seco': '📦',
-    'bebidas': '🍹',
-    'freezer-camara': '🥶',
-    'descartaveis': '🥤'
+export function getAreaIcon(slug: string) {
+  switch(slug) {
+    case 'bar': return <GlassWater className="w-4 h-4 text-gray-500" />
+    case 'cozinha': return <Coffee className="w-4 h-4 text-gray-500" />
+    case 'estoque-seco': return <Package className="w-4 h-4 text-gray-500" />
+    case 'bebidas': return <GlassWater className="w-4 h-4 text-gray-500" />
+    case 'freezer-camara': return <Snowflake className="w-4 h-4 text-gray-500" />
+    case 'descartaveis': return <Package className="w-4 h-4 text-gray-500" />
+    default: return <MapPin className="w-4 h-4 text-gray-500" />
   }
-  return icons[slug] || '📁'
 }
 
 // Definição de interface para os itens com join
@@ -384,7 +384,7 @@ export default function CountsPage() {
         progress: areaProgress,
         status,
       }
-    })
+    }).filter(a => a.itemCount > 0)
 
     return (
       <div className="space-y-5 py-5 max-w-md mx-auto">

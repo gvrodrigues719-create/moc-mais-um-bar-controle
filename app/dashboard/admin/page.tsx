@@ -15,6 +15,7 @@ interface AdminStats {
   activeSessions: number
   completedSessions: number
   sampleItems: { id: string; name: string; unit: string; item_type: string }[]
+  activeUsers: number
   loading: boolean
 }
 
@@ -31,6 +32,7 @@ export default function AdminPage() {
     activeSessions: 0,
     completedSessions: 0,
     sampleItems: [],
+    activeUsers: 0,
     loading: true,
   })
 
@@ -66,6 +68,13 @@ export default function AdminPage() {
           .from('count_sessions')
           .select('status')
           .eq('store_id', storeId)
+
+        // Fetch profiles for this store
+        const { count: usersCount, error: usersErr } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true })
+          .eq('store_id', storeId)
+          .eq('active', true)
 
         if (itemsErr || sessionsErr) {
           console.error('Erro ao buscar estatísticas do admin:', itemsErr || sessionsErr)
@@ -104,6 +113,7 @@ export default function AdminPage() {
           activeSessions: active,
           completedSessions: completed,
           sampleItems: sample,
+          activeUsers: usersCount || 0,
           loading: false,
         })
       } catch (err) {
@@ -145,7 +155,7 @@ export default function AdminPage() {
       description: 'Gerencie os operadores e gerentes com acesso ao sistema.',
       status: 'Ativo',
       statusStyle: 'bg-green-50 text-green-700 border-green-200',
-      infoText: isLive ? '1 usuário ativo' : 'Visualização de perfis',
+      infoText: isLive ? `${stats.activeUsers} usuários ativos` : 'Visualização de perfis',
       route: '/dashboard/admin/users',
     },
     {
@@ -254,9 +264,11 @@ export default function AdminPage() {
               : (MOCK_ITEMS.filter(x => x.type === key).length || 0)
             if (currentQty === 0) return null
             return (
-              <div
+              <button
                 key={key}
-                className="rounded-2xl p-3.5 border flex items-center justify-between bg-white shadow-sm"
+                onClick={() => router.push(`/dashboard/admin/items?type=${key}`)}
+                aria-label={`Ver itens do tipo ${cfg.label}`}
+                className="w-full rounded-2xl p-3.5 border flex items-center justify-between bg-white shadow-sm transition-all duration-200 hover:border-gray-300 active:scale-[0.99] cursor-pointer text-left"
                 style={{ borderColor: 'var(--border)' }}
               >
                 <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -266,17 +278,20 @@ export default function AdminPage() {
                     <p className="text-xs mt-0.5 leading-relaxed text-gray-500">{cfg.description}</p>
                   </div>
                 </div>
-                <span 
-                  className="text-xs font-black px-2.5 py-1 rounded-lg border ml-3 shrink-0" 
-                  style={{ 
-                    backgroundColor: 'var(--brand-light)', 
-                    color: 'var(--brand)',
-                    borderColor: 'rgba(124,45,53,0.1)'
-                  }}
-                >
-                  {currentQty} itens
-                </span>
-              </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span 
+                    className="text-xs font-black px-2.5 py-1 rounded-lg border" 
+                    style={{ 
+                      backgroundColor: 'var(--brand-light)', 
+                      color: 'var(--brand)',
+                      borderColor: 'rgba(124,45,53,0.1)'
+                    }}
+                  >
+                    {currentQty} itens
+                  </span>
+                  <ChevronRight className="w-4 h-4" style={{ color: 'var(--muted)' }} />
+                </div>
+              </button>
             )
           })}
         </div>
@@ -294,21 +309,24 @@ export default function AdminPage() {
               : (item as { type?: string }).type) as ItemType
             const typeCfg = ITEM_TYPE_CONFIG[itemType] || { label: 'Outro', color: '#6B7280' }
             return (
-              <div
+              <button
                 key={item.id}
-                className="rounded-xl px-3.5 py-3 border flex items-center justify-between bg-white shadow-sm"
+                onClick={() => router.push(`/dashboard/admin/items?itemId=${item.id}`)}
+                aria-label={`Editar item ${item.name}`}
+                className="w-full rounded-xl px-3.5 py-3 border flex items-center justify-between bg-white shadow-sm transition-all duration-200 hover:border-gray-300 active:scale-[0.99] cursor-pointer text-left"
                 style={{ borderColor: 'var(--border)' }}
               >
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: typeCfg.color }} />
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>{item.name}</p>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase mt-0.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--foreground)' }}>{item.name}</p>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mt-0.5 truncate">
                       {typeCfg.label} · {item.unit}
                     </p>
                   </div>
                 </div>
-              </div>
+                <ChevronRight className="w-4 h-4 shrink-0 ml-3" style={{ color: 'var(--muted)' }} />
+              </button>
             )
           })}
           <button

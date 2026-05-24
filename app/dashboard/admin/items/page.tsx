@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 import {
   ArrowLeft, Search, X, AlertCircle, Loader2, Check, Package, ChevronRight,
 } from 'lucide-react'
@@ -48,8 +49,12 @@ const STATUS_PILLS: { value: StatusFilter; label: string }[] = [
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function AdminItemsPage() {
+function AdminItemsContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const initialType = searchParams.get('type')
+  const initialItemId = searchParams.get('itemId')
+
   const { loading: storeLoading, isConfigured, profile } = useStoreData()
 
   useEffect(() => {
@@ -69,7 +74,7 @@ export default function AdminItemsPage() {
   // Filter state
   const [search, setSearch] = useState('')
   const [filterArea, setFilterArea] = useState('')
-  const [filterType, setFilterType] = useState('')
+  const [filterType, setFilterType] = useState(initialType || '')
   const [filterStatus, setFilterStatus] = useState<StatusFilter>('active')
 
   // Edit modal state
@@ -91,6 +96,21 @@ export default function AdminItemsPage() {
       ])
       if (itemsRes.success) {
         setItems(itemsRes.items)
+        if (initialItemId) {
+          const itemToOpen = itemsRes.items.find(i => i.id === initialItemId)
+          if (itemToOpen) {
+            setEditingItem(itemToOpen)
+            setEditForm({
+              name: itemToOpen.name,
+              unit: itemToOpen.unit,
+              item_type: itemToOpen.item_type,
+              area_id: itemToOpen.area_id || '',
+              sort_order: String(itemToOpen.sort_order),
+              active: itemToOpen.active,
+              unit_observation: itemToOpen.unit_observation || '',
+            })
+          }
+        }
       } else {
         setLoadError(itemsRes.error || 'Erro ao carregar itens.')
       }
@@ -614,3 +634,16 @@ export default function AdminItemsPage() {
     </>
   )
 }
+
+export default function AdminItemsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center py-28 space-y-3">
+        <Loader2 className="w-7 h-7 animate-spin" style={{ color: 'var(--brand)' }} />
+      </div>
+    }>
+      <AdminItemsContent />
+    </Suspense>
+  )
+}
+

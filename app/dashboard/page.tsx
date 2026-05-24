@@ -3,22 +3,23 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  ClipboardList, Clock, CheckCircle2, ChevronRight,
-  Store, AlertCircle, Loader2, WifiOff,
+  ClipboardList, ChevronRight,
+  Store, Loader2, WifiOff,
   Wine, Utensils, Package, CupSoda, Snowflake, PackageOpen, Folder,
+  type LucideIcon,
 } from 'lucide-react'
 import { useStoreData } from '@/hooks/useStoreData'
-import { USER_ROLE_LABELS, COUNT_STATUS_LABELS, type CountSession } from '@/lib/types'
+import { USER_ROLE_LABELS, type CountSession, type CountStatus } from '@/lib/types'
 import StatusBadge from '@/components/ui/StatusBadge'
 import ProgressBar from '@/components/ui/ProgressBar'
 import { createClient } from '@/lib/supabase/client'
 import { getActiveSessionAction } from '@/app/actions/count'
-import { MOCK_CURRENT_USER, MOCK_TODAY_COUNT, MOCK_AREAS, MOCK_HISTORY } from '@/mocks/maisUmBar'
+import { MOCK_CURRENT_USER, MOCK_AREAS, MOCK_HISTORY } from '@/mocks/maisUmBar'
 
 // Mapeia slug ou id de área para ícones profissionais do Lucide
 export function getAreaIcon(slugOrId: string) {
   const clean = slugOrId.toLowerCase().replace('area-', '')
-  const icons: Record<string, any> = {
+  const icons: Record<string, LucideIcon> = {
     'bar': Wine,
     'cozinha': Utensils,
     'estoque': Package,
@@ -46,18 +47,20 @@ function todayLabel() {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { loading, isConfigured, profile, store, areas, recentSessions, error } = useStoreData()
+  const { loading, isConfigured, profile, store, areas, recentSessions } = useStoreData()
 
   // Estado local para carregar sessão de contagem ativa e itens do banco
   const [activeSession, setActiveSession] = useState<CountSession | null>(null)
-  const [sessionItems, setSessionItems] = useState<any[]>([])
+  const [sessionItems, setSessionItems] = useState<{ id: string; status: string; area_id: string | null }[]>([])
   const [dbActiveItems, setDbActiveItems] = useState<{ id: string; area_id: string | null }[]>([])
   const [loadingSession, setLoadingSession] = useState(true)
 
   useEffect(() => {
     if (!isConfigured || !profile) {
-      setLoadingSession(false)
-      return
+      const timer = setTimeout(() => {
+        setLoadingSession(false)
+      }, 0)
+      return () => clearTimeout(timer)
     }
 
     const storeId = profile.store_id
@@ -168,7 +171,7 @@ export default function DashboardPage() {
       })
 
   // Filtra as áreas ativas/visíveis (que possuem pelo menos 1 item cadastrado)
-  const visibleAreas = displayAreas.filter((area: any) => {
+  const visibleAreas = displayAreas.filter((area: { id: string; itemCount: number }) => {
     const areaTotal = activeSessionExist 
       ? area.itemCount 
       : (isLive ? area.itemCount : (DEMO_AREA_COUNTS[area.id] ?? area.itemCount))
@@ -179,12 +182,6 @@ export default function DashboardPage() {
   const completedAreasCount = activeSessionExist 
     ? visibleAreas.filter(x => x.status === 'completed').length 
     : 0
-  const areasInProgressCount = activeSessionExist 
-    ? visibleAreas.filter(x => x.status === 'in_progress').length 
-    : 0
-  const pendingAreasCount = activeSessionExist 
-    ? visibleAreas.filter(x => x.status === 'pending').length 
-    : totalAreas
 
   const sessionStatus = activeSessionExist ? 'in_progress' : 'not_started'
 
@@ -319,7 +316,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid gap-2">
-            {visibleAreas.map((area: any) => {
+            {visibleAreas.map((area: { id: string; name: string; slug?: string; itemCount: number; completedCount?: number; status?: string }) => {
               const AreaIcon = getAreaIcon(area.slug || area.id)
               
               const areaTotal = activeSessionExist 
@@ -354,7 +351,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                   </div>
-                  <StatusBadge variant="area" status={status ?? 'pending'} />
+                  <StatusBadge variant="area" status={(status ?? 'pending') as "pending" | "in_progress" | "completed"} />
                 </div>
               )
             })}
@@ -425,32 +422,35 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {(isLive ? recentSessions : MOCK_HISTORY).map((entry: any) => (
-              <div
-                key={entry.id}
-                className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-sm"
-                style={{ borderColor: 'var(--border)' }}
-              >
-                <div>
-                  <p className="text-xs font-bold text-gray-800">
-                    {entry.date ?? new Date(entry.created_at).toLocaleDateString('pt-BR')}
-                  </p>
-                  <p className="text-[10px] font-semibold text-gray-400 mt-0.5">
-                    {entry.operator ?? (entry.started_by ? 'Operador' : '—')}
-                    {entry.status === 'completed' ? ' · Concluída' : ' · Em Andamento'}
-                  </p>
+            {((isLive ? recentSessions : MOCK_HISTORY) as unknown[]).map((e) => {
+              const entry = e as { id: string; date?: string; created_at?: string; operator?: string; started_by?: string | null; status?: string | null }
+              return (
+                <div
+                  key={entry.id}
+                  className="rounded-xl p-3 border flex items-center justify-between bg-white shadow-sm"
+                  style={{ borderColor: 'var(--border)' }}
+                >
+                  <div>
+                    <p className="text-xs font-bold text-gray-800">
+                      {entry.date ?? (entry.created_at ? new Date(entry.created_at).toLocaleDateString('pt-BR') : '')}
+                    </p>
+                    <p className="text-[10px] font-semibold text-gray-400 mt-0.5">
+                      {entry.operator ?? (entry.started_by ? 'Operador' : '—')}
+                      {entry.status === 'completed' ? ' · Concluída' : ' · Em Andamento'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge variant="count" status={(entry.status ?? 'not_started') as CountStatus} />
+                    <button
+                      onClick={() => router.push('/dashboard/counts')}
+                      className="p-1 rounded-lg hover:bg-gray-50 transition cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <StatusBadge variant="count" status={entry.status ?? 'not_started'} />
-                  <button
-                    onClick={() => router.push('/dashboard/counts')}
-                    className="p-1 rounded-lg hover:bg-gray-50 transition cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

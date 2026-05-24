@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft, Search, X, AlertCircle, Loader2, Check, Users, UserPlus, Shield, HelpCircle, ChevronRight,
+  ArrowLeft, Search, X, AlertCircle, Loader2, Check, Users, UserPlus, Shield, ChevronRight,
 } from 'lucide-react'
 import { USER_ROLE_LABELS, type UserRole } from '@/lib/types'
-import { createClient } from '@/lib/supabase/client'
+import { useStoreData } from '@/hooks/useStoreData'
 import {
   getUsersAction,
   updateUserAction,
@@ -26,9 +26,10 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
 export default function AdminUsersPage() {
   const router = useRouter()
 
-  // Auth context
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null)
+  // Auth context via hook
+  const { loading: storeLoading, isConfigured, profile } = useStoreData()
+  const currentUserId = profile?.id ?? null
+  const currentUserRole = (profile?.role ?? null) as UserRole | null
 
   // Data states
   const [users, setUsers] = useState<AdminUser[]>([])
@@ -55,32 +56,7 @@ export default function AdminUsersPage() {
 
   // ─── Load data ────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    loadUsers()
-    checkCurrentUser()
-  }, [])
-
-  async function checkCurrentUser() {
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        setCurrentUserId(user.id)
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .maybeSingle()
-        if (profile?.role) {
-          setCurrentUserRole(profile.role as UserRole)
-        }
-      }
-    } catch (err) {
-      console.error('Erro ao verificar usuário atual:', err)
-    }
-  }
-
-  async function loadUsers() {
+  const loadUsers = useCallback(async () => {
     setLoading(true)
     setLoadError('')
     try {
@@ -95,7 +71,19 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (storeLoading) return
+    if (isConfigured && (!profile || profile.role === 'operator')) {
+      router.push('/dashboard')
+      return
+    }
+    const timer = setTimeout(() => {
+      loadUsers()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [storeLoading, isConfigured, profile, router, loadUsers])
 
   // ─── Filtering ────────────────────────────────────────────────────────────
 
@@ -250,6 +238,14 @@ export default function AdminUsersPage() {
   const isUserManager = currentUserRole === 'manager'
   const canManage = isUserAdmin || isUserManager
 
+  if (storeLoading) {
+    return null
+  }
+
+  if (isConfigured && (!profile || profile.role === 'operator')) {
+    return null
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-28 space-y-3">
@@ -300,11 +296,11 @@ export default function AdminUsersPage() {
         {/* Summary grid */}
         <div className="grid grid-cols-4 gap-2">
           {[
-            { label: 'Total', value: summary.total, bg: '#F7F6F3', text: 'var(--foreground)' },
-            { label: 'Ativos', value: summary.active, bg: '#F0FDF4', text: '#16A34A' },
-            { label: 'Inativos', value: summary.inactive, bg: '#FEF2F2', text: '#DC2626' },
-            { label: 'Gestores', value: summary.adminsOrManagers, bg: '#F5F3FF', text: '#7C3AED' },
-          ].map(({ label, value, bg, text }) => (
+            { label: 'Total', value: summary.total, text: 'var(--foreground)' },
+            { label: 'Ativos', value: summary.active, text: '#16A34A' },
+            { label: 'Inativos', value: summary.inactive, text: '#DC2626' },
+            { label: 'Gestores', value: summary.adminsOrManagers, text: '#7C3AED' },
+          ].map(({ label, value, text }) => (
             <div
               key={label}
               className="rounded-xl p-2.5 text-center border bg-white flex flex-col justify-center"

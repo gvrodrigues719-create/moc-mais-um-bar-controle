@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, Search, X, AlertCircle, Loader2, Check, Package, ChevronRight,
 } from 'lucide-react'
 import { ITEM_TYPE_CONFIG, type ItemType } from '@/lib/types'
+import { useStoreData } from '@/hooks/useStoreData'
 import {
   getItemsAction,
   getAreasForAdminAction,
@@ -49,6 +50,14 @@ const STATUS_PILLS: { value: StatusFilter; label: string }[] = [
 
 export default function AdminItemsPage() {
   const router = useRouter()
+  const { loading: storeLoading, isConfigured, profile } = useStoreData()
+
+  useEffect(() => {
+    if (storeLoading) return
+    if (isConfigured && (!profile || profile.role === 'operator')) {
+      router.push('/dashboard')
+    }
+  }, [storeLoading, isConfigured, profile, router])
 
   // Data state
   const [items, setItems] = useState<AdminItem[]>([])
@@ -71,11 +80,7 @@ export default function AdminItemsPage() {
 
   // ─── Load ─────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    loadAll()
-  }, [])
-
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     setLoading(true)
     setLoadError('')
     try {
@@ -96,7 +101,14 @@ export default function AdminItemsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadAll()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [loadAll])
 
   // ─── Filtering ────────────────────────────────────────────────────────────
 
@@ -196,6 +208,14 @@ export default function AdminItemsPage() {
   }
 
   // ─── Render: Loading ─────────────────────────────────────────────────────
+
+  if (storeLoading) {
+    return null
+  }
+
+  if (isConfigured && (!profile || profile.role === 'operator')) {
+    return null
+  }
 
   if (loading) {
     return (

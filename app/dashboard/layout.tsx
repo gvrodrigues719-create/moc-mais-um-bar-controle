@@ -15,6 +15,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     async function checkSession() {
       if (!isSupabaseConfigured()) {
+        if (process.env.NODE_ENV === 'production') {
+          router.replace('/login?error=config_missing')
+          return
+        }
         // Modo local: liberar sem verificação de sessão.
         setReady(true)
         return
@@ -56,6 +60,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     await supabase.auth.signOut()
     router.replace('/login')
     router.refresh()
+  }
+
+  const configured = isSupabaseConfigured()
+
+  if (!configured && process.env.NODE_ENV === 'production') {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-5 bg-red-50 text-center">
+        <div className="max-w-md p-6 bg-white rounded-2xl border border-red-200 shadow-sm space-y-3">
+          <h1 className="text-lg font-black text-red-805 uppercase" style={{ color: 'var(--brand)' }}>Acesso Bloqueado</h1>
+          <p className="text-xs font-semibold text-gray-600 leading-relaxed">
+            Erro de configuração: O banco de dados Supabase não foi configurado no servidor de produção.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   if (!ready) {

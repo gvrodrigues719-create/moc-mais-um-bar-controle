@@ -27,11 +27,12 @@ async function getAdminContext(supabase: Awaited<ReturnType<typeof createClient>
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('store_id, role')
+    .select('store_id, role, active')
     .eq('id', user.id)
     .maybeSingle()
 
   if (!profile?.store_id) return null
+  if (profile.active !== true) return null
   if (!['admin', 'manager'].includes(profile.role)) return null
 
   return { userId: user.id, storeId: profile.store_id, role: profile.role as string }
@@ -155,7 +156,7 @@ export async function updateItemAction(
   if (error) return { success: false, error: error.message }
 
   // Registrar evento operacional de edição
-  await supabase.from('operational_events').insert({
+  const { error: logErr } = await supabase.from('operational_events').insert({
     store_id: ctx.storeId,
     actor_id: ctx.userId,
     event_type: 'item_updated',
@@ -163,6 +164,10 @@ export async function updateItemAction(
     source_id: itemId,
     metadata: { fields: Object.keys(data) },
   })
+
+  if (logErr) {
+    return { success: false, error: 'Falha ao registrar log operacional: ' + logErr.message }
+  }
 
   return { success: true }
 }
@@ -297,20 +302,7 @@ export async function updateUserAction(
 
   if (error) return { success: false, error: error.message }
 
-  // Registrar eventos operacionais
-  let eventType = 'user_updated'
-  if (data.active === false) eventType = 'user_deactivated'
-  else if (data.active === true) eventType = 'user_activated'
-
-  await supabase.from('operational_events').insert({
-    store_id: ctx.storeId,
-    actor_id: ctx.userId,
-    event_type: eventType as any,
-    source_type: 'profiles',
-    source_id: userId,
-    metadata: { fields: Object.keys(data) },
-  })
-
+  // Nota: Não registramos operational_event porque não há event_type apropriado no enum do banco (ex: user_updated)
   return { success: true }
 }
 
@@ -388,22 +380,15 @@ export async function createUserAction(data: {
       return { success: false, error: `Erro ao criar perfil: ${profileErr.message}` }
     }
 
-    // 3. Registrar evento
-    await adminClient.from('operational_events').insert({
-      store_id: ctx.storeId,
-      actor_id: ctx.userId,
-      event_type: 'user_created',
-      source_type: 'profiles',
-      source_id: authUser.user.id,
-      metadata: { role: data.role },
-    })
+    // Nota: Não registramos operational_event porque não há event_type apropriado no enum do banco (ex: user_created)
 
     return {
       success: true,
       temporaryPassword: password,
     }
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Erro inesperado no servidor.' }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : 'Erro inesperado no servidor.'
+    return { success: false, error: errMsg }
   }
 }
 
@@ -557,4 +542,165 @@ export async function updateAreaAction(
 
   return { success: true }
 }
+
+// ─── AUDITORIA DE SESSÕES (ETAPA 4 - SESSIONS) ──────────────────────────────────
+
+export interface AdminSession {
+  id: string
+  status: 'not_started' | 'in_progress' | 'completed' | 'cancelled'
+  started_at: string | null
+  completed_at: string | null
+  notes: string | null
+  started_by_profile: { name: string } | null
+  completed_by_profile: { name: string } | null
+  total_items: number
+  counted_items: number
+  pending_items: number
+}
+
+/**
+ * Lista todas as sessões de contagem da loja atual, incluindo
+ * quem iniciou/finalizou e o quantitativo de itens contados/pendentes.
+ */
+export async function getSessionsAction(): Promise<{
+  success: boolean
+  error?: string
+  sessions: AdminSession[]
+}> {
+  const supabase = await createClient()
+  const ctx = await getAdminContext(supabase)
+  if (!ctx) return { success: false, error: 'Sem permissão de acesso.', sessions: [] }
+
+  // 1. Buscar sessões
+  const { data: sessions, error: sessionsErr } = await supabase
+    .from('count_sessions')
+    .select(`
+      id, status, started_at, completed_at, notes,
+      started_by_profile:started_by ( name ),
+      completed_by_profile:completed_by ( name )
+    `)
+    .eq('store_id', ctx.storeId)
+    .order('created_at', { ascending: false })
+
+  if (sessionsErr) return { success: false, error: sessionsErr.message, sessions: [] }
+
+  // 2. Buscar itens de contagem de todas as sessões da loja para consolidar estatísticas na memória
+  const sessionIds = (sessions || []).map(s => s.id)
+  if (sessionIds.length === 0) {
+    return { success: true, sessions: [] }
+  }
+
+  const { data: sessionItems, error: itemsErr } = await supabase
+    .from('count_session_items')
+    .select('session_id, status')
+    .in('session_id', sessionIds)
+
+  if (itemsErr) return { success: false, error: itemsErr.message, sessions: [] }
+
+  // 3. Agregar contagem por sessionId
+  const statsMap: Record<string, { total: number; counted: number; pending: number }> = {}
+  for (const sessionId of sessionIds) {
+    statsMap[sessionId] = { total: 0, counted: 0, pending: 0 }
+  }
+
+  for (const item of (sessionItems || [])) {
+    if (statsMap[item.session_id]) {
+      statsMap[item.session_id].total++
+      if (item.status === 'pending') {
+        statsMap[item.session_id].pending++
+      } else {
+        statsMap[item.session_id].counted++
+      }
+    }
+  }
+
+  // 4. Formatar resultado
+  const result: AdminSession[] = (sessions || []).map(s => ({
+    id: s.id,
+    status: s.status as AdminSession['status'],
+    started_at: s.started_at,
+    completed_at: s.completed_at,
+    notes: s.notes,
+    started_by_profile: Array.isArray(s.started_by_profile)
+      ? (s.started_by_profile[0] as unknown as { name: string })
+      : (s.started_by_profile as unknown as { name: string } | null),
+    completed_by_profile: Array.isArray(s.completed_by_profile)
+      ? (s.completed_by_profile[0] as unknown as { name: string })
+      : (s.completed_by_profile as unknown as { name: string } | null),
+    total_items: statsMap[s.id]?.total || 0,
+    counted_items: statsMap[s.id]?.counted || 0,
+    pending_items: statsMap[s.id]?.pending || 0,
+  }))
+
+  return { success: true, sessions: result }
+}
+
+/**
+ * Cancela uma sessão de contagem em andamento ('in_progress') justificando o motivo.
+ * Atualiza o status da contagem para 'cancelled' sem deletar do banco.
+ * Apenas administradores e gerentes podem realizar esta operação.
+ */
+export async function cancelSessionAction(
+  sessionId: string,
+  reason: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient()
+  const ctx = await getAdminContext(supabase)
+  if (!ctx) return { success: false, error: 'Sem permissão de acesso.' }
+
+  const reasonTrimmed = reason.trim()
+  if (!reasonTrimmed) {
+    return { success: false, error: 'A justificativa de cancelamento é obrigatória.' }
+  }
+
+  // 1. Validar se a sessão existe, se pertence à loja e se está ativa ('in_progress')
+  const { data: session, error: fetchErr } = await supabase
+    .from('count_sessions')
+    .select('id, status')
+    .eq('id', sessionId)
+    .eq('store_id', ctx.storeId)
+    .maybeSingle()
+
+  if (fetchErr || !session) {
+    return { success: false, error: 'Sessão não localizada ou sem autorização.' }
+  }
+  if (session.status !== 'in_progress') {
+    return { success: false, error: 'Apenas sessões em andamento podem ser canceladas.' }
+  }
+
+  // 2. Atualizar status para 'cancelled' e registrar motivo em notes
+  const { error: updateErr } = await supabase
+    .from('count_sessions')
+    .update({
+      status: 'cancelled',
+      completed_by: ctx.userId,
+      completed_at: new Date().toISOString(),
+      notes: `Cancelada: ${reasonTrimmed}`,
+    })
+    .eq('id', sessionId)
+
+  if (updateErr) return { success: false, error: updateErr.message }
+
+  // 3. Registrar log de evento como 'count_session_completed' (único enum compatível no banco)
+  // com metadados detalhando o cancelamento
+  const { error: logErr } = await supabase.from('operational_events').insert({
+    store_id: ctx.storeId,
+    actor_id: ctx.userId,
+    event_type: 'count_session_completed', // tipo enum do banco
+    source_type: 'count_sessions',
+    source_id: sessionId,
+    metadata: {
+      action: 'session_cancelled',
+      reason: reasonTrimmed,
+      completed_at: new Date().toISOString(),
+    },
+  })
+
+  if (logErr) {
+    return { success: false, error: 'Falha ao registrar log de cancelamento: ' + logErr.message }
+  }
+
+  return { success: true }
+}
+
 

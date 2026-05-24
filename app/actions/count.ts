@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import type { CountSession, CountSessionItem, OperationalEventType } from '@/lib/types'
+import type { CountSession, OperationalEventType } from '@/lib/types'
 
 /**
  * Busca a sessão de contagem atualmente em andamento ('in_progress')
@@ -15,11 +15,11 @@ export async function getActiveSessionAction(): Promise<CountSession | null> {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('store_id')
+    .select('store_id, active')
     .eq('id', user.id)
     .maybeSingle()
 
-  if (!profile?.store_id) return null
+  if (!profile?.store_id || profile.active !== true) return null
 
   const { data: activeSession } = await supabase
     .from('count_sessions')
@@ -41,6 +41,7 @@ export async function getActiveSessionAction(): Promise<CountSession | null> {
  */
 export async function startSessionAction(): Promise<{ success: boolean; session?: CountSession; error?: string }> {
   const supabase = await createClient()
+  let createdSessionId: string | null = null
 
   try {
     const { data: { user }, error: userErr } = await supabase.auth.getUser()
@@ -50,12 +51,15 @@ export async function startSessionAction(): Promise<{ success: boolean; session?
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('store_id')
+      .select('store_id, active')
       .eq('id', user.id)
       .maybeSingle()
 
     if (!profile?.store_id) {
       return { success: false, error: 'Perfil de usuário ou loja não encontrado.' }
+    }
+    if (profile.active !== true) {
+      return { success: false, error: 'Seu acesso está inativo. Ação bloqueada.' }
     }
 
     // 1. Verificar se já existe uma sessão aberta
@@ -86,6 +90,8 @@ export async function startSessionAction(): Promise<{ success: boolean; session?
       return { success: false, error: 'Falha ao criar sessão de contagem: ' + createErr?.message }
     }
 
+    createdSessionId = newSession.id
+
     // 3. Buscar todos os itens de contagem ativos da loja
     const { data: activeItems, error: itemsErr } = await supabase
       .from('count_items')
@@ -94,10 +100,14 @@ export async function startSessionAction(): Promise<{ success: boolean; session?
       .eq('active', true)
 
     if (itemsErr) {
+      // Rollback
+      await supabase.from('count_sessions').delete().eq('id', newSession.id)
       return { success: false, error: 'Falha ao buscar itens da loja: ' + itemsErr.message }
     }
 
     if (!activeItems || activeItems.length === 0) {
+      // Rollback
+      await supabase.from('count_sessions').delete().eq('id', newSession.id)
       return { success: false, error: 'Nenhum item ativo cadastrado nesta loja para contar.' }
     }
 
@@ -116,13 +126,13 @@ export async function startSessionAction(): Promise<{ success: boolean; session?
       .insert(sessionItems)
 
     if (insertErr) {
-      // Rollback manual sutil deletando a sessão criada para integridade
+      // Rollback
       await supabase.from('count_sessions').delete().eq('id', newSession.id)
       return { success: false, error: 'Falha ao inicializar itens da sessão: ' + insertErr.message }
     }
 
     // 5. Registrar evento operacional
-    await supabase.from('operational_events').insert({
+    const { error: eventErr } = await supabase.from('operational_events').insert({
       store_id: profile.store_id,
       actor_id: user.id,
       event_type: 'count_session_started' as OperationalEventType,
@@ -131,9 +141,24 @@ export async function startSessionAction(): Promise<{ success: boolean; session?
       metadata: { activeItemsCount: activeItems.length },
     })
 
+    if (eventErr) {
+      // Rollback
+      await supabase.from('count_sessions').delete().eq('id', newSession.id)
+      return { success: false, error: 'Falha ao registrar log de início da sessão: ' + eventErr.message }
+    }
+
     return { success: true, session: newSession as CountSession }
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Erro inesperado ao iniciar sessão.' }
+  } catch (err) {
+    if (createdSessionId) {
+      // Rollback final para erros não previstos
+      try {
+        await supabase.from('count_sessions').delete().eq('id', createdSessionId)
+      } catch (e) {
+        console.error('Erro no rollback final:', e)
+      }
+    }
+    const errMsg = err instanceof Error ? err.message : 'Erro inesperado ao iniciar sessão.'
+    return { success: false, error: errMsg }
   }
 }
 
@@ -155,21 +180,51 @@ export async function updateSessionItemAction(
       return { success: false, error: 'Usuário não autenticado.' }
     }
 
-    // Obter dados do perfil para pegar o store_id
+    // Obter dados do perfil e validar se está ativo
     const { data: profile } = await supabase
       .from('profiles')
-      .select('store_id')
+      .select('store_id, active')
       .eq('id', user.id)
       .maybeSingle()
 
     if (!profile?.store_id) {
       return { success: false, error: 'Perfil não encontrado.' }
     }
+    if (profile.active !== true) {
+      return { success: false, error: 'Acesso inativo. Ação bloqueada.' }
+    }
+
+    // Validar se a sessão existe, se pertence à loja do usuário e se está em andamento
+    const { data: session, error: sErr } = await supabase
+      .from('count_sessions')
+      .select('id, status')
+      .eq('id', sessionId)
+      .eq('store_id', profile.store_id)
+      .maybeSingle()
+
+    if (sErr || !session) {
+      return { success: false, error: 'Sessão não localizada ou não autorizada.' }
+    }
+    if (session.status !== 'in_progress') {
+      return { success: false, error: 'A sessão não está em andamento.' }
+    }
+
+    // Validar se o item de contagem realmente pertence a esta sessão
+    const { data: sessionItem, error: itemErr } = await supabase
+      .from('count_session_items')
+      .select('id')
+      .eq('session_id', sessionId)
+      .eq('item_id', itemId)
+      .maybeSingle()
+
+    if (itemErr || !sessionItem) {
+      return { success: false, error: 'Item não pertence a esta sessão de contagem.' }
+    }
 
     // 1. Atualizar o registro do item na sessão
     const newStatus = isZeroed ? 'zeroed' : 'counted'
 
-    const { error: updateErr } = await supabase
+    const { data: updatedItems, error: updateErr } = await supabase
       .from('count_session_items')
       .update({
         quantity: quantity,
@@ -178,26 +233,36 @@ export async function updateSessionItemAction(
         counted_by: user.id,
         counted_at: new Date().toISOString(),
       })
-      .eq('session_id', sessionId)
-      .eq('item_id', itemId)
+      .eq('id', sessionItem.id)
+      .select('id')
 
     if (updateErr) {
       return { success: false, error: updateErr.message }
     }
+    if (!updatedItems || updatedItems.length === 0) {
+      return { success: false, error: 'Item não pertence a esta sessão de contagem.' }
+    }
 
-    // 2. Registrar evento operacional
-    await supabase.from('operational_events').insert({
+    const sessionItemId = updatedItems[0].id
+
+    // 2. Registrar evento operacional usando o source_id correto (UUID da linha de count_session_items)
+    const { error: logErr } = await supabase.from('operational_events').insert({
       store_id: profile.store_id,
       actor_id: user.id,
       event_type: (isZeroed ? 'count_item_zeroed' : 'count_item_counted') as OperationalEventType,
       source_type: 'count_session_items',
-      source_id: itemId, // referência direta ao item_id
-      metadata: { quantity, isZeroed, sessionId },
+      source_id: sessionItemId,
+      metadata: { quantity, isZeroed, sessionId, item_id: itemId },
     })
 
+    if (logErr) {
+      return { success: false, error: 'Falha ao registrar log operacional: ' + logErr.message }
+    }
+
     return { success: true }
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Erro inesperado ao salvar item.' }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : 'Erro inesperado ao salvar item.'
+    return { success: false, error: errMsg }
   }
 }
 
@@ -218,12 +283,30 @@ export async function completeSessionAction(
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('store_id')
+      .select('store_id, active')
       .eq('id', user.id)
       .maybeSingle()
 
     if (!profile?.store_id) {
       return { success: false, error: 'Perfil não encontrado.' }
+    }
+    if (profile.active !== true) {
+      return { success: false, error: 'Acesso inativo. Ação bloqueada.' }
+    }
+
+    // Validar se a sessão existe, se pertence à loja do usuário e se está em andamento
+    const { data: session, error: sErr } = await supabase
+      .from('count_sessions')
+      .select('id, status')
+      .eq('id', sessionId)
+      .eq('store_id', profile.store_id)
+      .maybeSingle()
+
+    if (sErr || !session) {
+      return { success: false, error: 'Sessão não localizada ou não autorizada.' }
+    }
+    if (session.status !== 'in_progress') {
+      return { success: false, error: 'Esta sessão não está em andamento.' }
     }
 
     // 1. Verificar se há algum item com status 'pending'
@@ -278,7 +361,7 @@ export async function completeSessionAction(
     }
 
     // 3. Registrar evento operacional
-    await supabase.from('operational_events').insert({
+    const { error: logErr } = await supabase.from('operational_events').insert({
       store_id: profile.store_id,
       actor_id: user.id,
       event_type: 'count_session_completed' as OperationalEventType,
@@ -287,8 +370,13 @@ export async function completeSessionAction(
       metadata: { completed_at: new Date().toISOString() },
     })
 
+    if (logErr) {
+      return { success: false, error: 'Falha ao registrar log de finalização: ' + logErr.message }
+    }
+
     return { success: true }
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Erro inesperado ao finalizar sessão.' }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : 'Erro inesperado ao finalizar sessão.'
+    return { success: false, error: errMsg }
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Mail, Lock, Loader2 } from 'lucide-react'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
@@ -10,16 +10,18 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
+  const [error, setError] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       if (params.get('error') === 'inactive') {
-        setError('Acesso inativo. Fale com o administrador.')
+        return 'Acesso inativo. Fale com o administrador.'
+      }
+      if (params.get('error') === 'config_missing') {
+        return 'Erro de configuração no servidor. Supabase ausente.'
       }
     }
-  }, [])
+    return ''
+  })
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,6 +36,10 @@ export default function LoginPage() {
 
     try {
       if (!isSupabaseConfigured()) {
+        if (process.env.NODE_ENV === 'production') {
+          setError('Erro de configuração no servidor. Supabase ausente.')
+          return
+        }
         // Modo local sem Supabase — aceitar qualquer credencial para desenvolvimento.
         await new Promise(r => setTimeout(r, 500))
         router.push('/dashboard')
@@ -60,7 +66,7 @@ export default function LoginPage() {
 
       router.push('/dashboard')
       router.refresh()
-    } catch (err: any) {
+    } catch {
       setError('Erro inesperado. Tente novamente.')
     } finally {
       setLoading(false)
@@ -68,6 +74,19 @@ export default function LoginPage() {
   }
 
   const configured = isSupabaseConfigured()
+
+  if (!configured && process.env.NODE_ENV === 'production') {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-5 bg-red-50 text-center">
+        <div className="max-w-md p-6 bg-white rounded-2xl border border-red-200 shadow-sm space-y-3">
+          <h1 className="text-lg font-black text-red-850 uppercase" style={{ color: 'var(--brand)' }}>Acesso Bloqueado</h1>
+          <p className="text-xs font-semibold text-gray-650 leading-relaxed">
+            Erro de configuração: O banco de dados Supabase não foi configurado no servidor de produção.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div

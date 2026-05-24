@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft, Search, X, AlertCircle, Loader2, Check, MapPin, ChevronRight, Layers, SlidersHorizontal, Info
+  ArrowLeft, Search, X, AlertCircle, Loader2, Check, MapPin, ChevronRight, Info
 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { useStoreData } from '@/hooks/useStoreData'
 import {
   getAreasAction,
   updateAreaAction,
@@ -18,9 +18,9 @@ type ActionState = 'idle' | 'saving' | 'saved' | 'error'
 export default function AdminAreasPage() {
   const router = useRouter()
 
-  // Context & Access Control
-  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  // Context & Access Control via hook
+  const { loading: storeLoading, isConfigured, profile } = useStoreData()
+  const currentUserRole = profile?.role ?? null
 
   // Data States
   const [areas, setAreas] = useState<AdminAreaWithCounts[]>([])
@@ -42,40 +42,10 @@ export default function AdminAreasPage() {
   const [editState, setEditState] = useState<ActionState>('idle')
   const [editError, setEditError] = useState('')
 
-  // Load and Check Permissions
-  useEffect(() => {
-    checkAccessAndLoad()
-  }, [])
-
-  async function checkAccessAndLoad() {
+  const loadAreas = useCallback(async () => {
     setLoading(true)
     setLoadError('')
     try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-        router.push('/login')
-        return
-      }
-
-      // Fetch user profile
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle()
-
-      if (!profile || profile.role === 'operator') {
-        // Redireciona operadores (sem acesso ao admin)
-        router.push('/dashboard')
-        return
-      }
-
-      setCurrentUserRole(profile.role)
-      setCurrentUserId(user.id)
-
-      // Fetch areas
       const res = await getAreasAction()
       if (res.success) {
         setAreas(res.areas)
@@ -88,7 +58,20 @@ export default function AdminAreasPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  // Load and Check Permissions
+  useEffect(() => {
+    if (storeLoading) return
+    if (isConfigured && (!profile || profile.role === 'operator')) {
+      router.push('/dashboard')
+      return
+    }
+    const timer = setTimeout(() => {
+      loadAreas()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [storeLoading, isConfigured, profile, router, loadAreas])
 
   // Load areas function for refreshing
   async function refreshAreas() {
@@ -199,7 +182,14 @@ export default function AdminAreasPage() {
   }
 
   const isAdmin = currentUserRole === 'admin'
-  const isManager = currentUserRole === 'manager'
+
+  if (storeLoading) {
+    return null
+  }
+
+  if (isConfigured && (!profile || profile.role === 'operator')) {
+    return null
+  }
 
   if (loading) {
     return (
@@ -237,10 +227,10 @@ export default function AdminAreasPage() {
         {/* Summary grid */}
         <div className="grid grid-cols-3 gap-2">
           {[
-            { label: 'Total', value: summary.total, bg: '#F7F6F3', text: 'var(--foreground)' },
-            { label: 'Ativas', value: summary.active, bg: '#F0FDF4', text: '#16A34A' },
-            { label: 'Inativas', value: summary.inactive, bg: '#FEF2F2', text: '#DC2626' },
-          ].map(({ label, value, bg, text }) => (
+            { label: 'Total', value: summary.total, text: 'var(--foreground)' },
+            { label: 'Ativas', value: summary.active, text: '#16A34A' },
+            { label: 'Inativas', value: summary.inactive, text: '#DC2626' },
+          ].map(({ label, value, text }) => (
             <div
               key={label}
               className="rounded-xl p-2.5 text-center border bg-white flex flex-col justify-center shadow-sm"

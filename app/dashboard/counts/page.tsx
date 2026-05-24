@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, ClipboardList, Loader2, Search, Check,
-  AlertCircle, X, Eye, HelpCircle, Save
+  AlertCircle, X, Save
 } from 'lucide-react'
 import { useStoreData } from '@/hooks/useStoreData'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -16,7 +16,7 @@ import {
   updateSessionItemAction,
   completeSessionAction
 } from '@/app/actions/count'
-import type { CountSession, CountSessionItem, AreaStatus } from '@/lib/types'
+import type { CountSession, AreaStatus } from '@/lib/types'
 
 // Função utilitária para mapear slug da área física para emoji
 export function getAreaIcon(slug: string): string {
@@ -75,32 +75,8 @@ export default function CountsPage() {
 
   const isLive = isConfigured && profile !== null
 
-  // Carregar sessão ativa e itens do Supabase
-  useEffect(() => {
-    if (!isConfigured || !profile) {
-      setLoadingSession(false)
-      return
-    }
-
-    async function loadSession() {
-      try {
-        const session = await getActiveSessionAction()
-        setActiveSession(session)
-        if (session) {
-          await loadSessionItems(session.id)
-        }
-      } catch (err) {
-        console.error('Erro ao carregar sessão ativa:', err)
-      } finally {
-        setLoadingSession(false)
-      }
-    }
-
-    loadSession()
-  }, [isConfigured, profile])
-
   // Função auxiliar para carregar itens da sessão
-  async function loadSessionItems(sessionId: string) {
+  const loadSessionItems = useCallback(async (sessionId: string) => {
     const supabase = createClient()
     const { data, error } = await supabase
       .from('count_session_items')
@@ -137,7 +113,33 @@ export default function CountsPage() {
     })
     setInputQuantities(qtys)
     setInputObservations(obs)
-  }
+  }, [])
+
+  // Carregar sessão ativa e itens do Supabase
+  useEffect(() => {
+    if (!isConfigured || !profile) {
+      const timer = setTimeout(() => {
+        setLoadingSession(false)
+      }, 0)
+      return () => clearTimeout(timer)
+    }
+
+    async function loadSession() {
+      try {
+        const session = await getActiveSessionAction()
+        setActiveSession(session)
+        if (session) {
+          await loadSessionItems(session.id)
+        }
+      } catch (err) {
+        console.error('Erro ao carregar sessão ativa:', err)
+      } finally {
+        setLoadingSession(false)
+      }
+    }
+
+    loadSession()
+  }, [isConfigured, profile, loadSessionItems])
 
   // Ação de Iniciar Contagem
   const handleStartSession = async () => {
@@ -150,8 +152,9 @@ export default function CountsPage() {
       } else {
         alert(res.error || 'Erro ao iniciar sessão.')
       }
-    } catch (err: any) {
-      alert(err.message || 'Erro inesperado.')
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Erro inesperado.'
+      alert(errMsg)
     } finally {
       setStarting(false)
     }
@@ -222,7 +225,7 @@ export default function CountsPage() {
         setSaveStates(prev => ({ ...prev, [itemId]: 'error' }))
         setSaveErrors(prev => ({ ...prev, [itemId]: 'Não foi possível salvar. Tente novamente.' }))
       }
-    } catch (err) {
+    } catch {
       setSaveStates(prev => ({ ...prev, [itemId]: 'error' }))
       setSaveErrors(prev => ({ ...prev, [itemId]: 'Erro de rede. Tente novamente.' }))
     }
@@ -273,8 +276,9 @@ export default function CountsPage() {
       } else {
         alert(res.error || 'Falha ao finalizar contagem.')
       }
-    } catch (err: any) {
-      alert(err.message || 'Erro inesperado.')
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Erro inesperado.'
+      alert(errMsg)
     } finally {
       setCompleting(false)
     }
@@ -378,8 +382,6 @@ export default function CountsPage() {
         status,
       }
     })
-
-    const allCompleted = completedSessionItems === totalSessionItems
 
     return (
       <div className="space-y-5 py-5 max-w-md mx-auto">

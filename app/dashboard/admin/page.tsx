@@ -20,7 +20,7 @@ interface AdminStats {
 
 export default function AdminPage() {
   const router = useRouter()
-  const { isConfigured, profile, areas } = useStoreData()
+  const { loading: storeLoading, isConfigured, profile, areas } = useStoreData()
   const isLive = isConfigured && profile !== null
   const areaCount = isLive ? areas.length : MOCK_AREAS.length
 
@@ -35,9 +35,18 @@ export default function AdminPage() {
   })
 
   useEffect(() => {
-    if (!isConfigured || !profile) {
-      setStats(prev => ({ ...prev, loading: false }))
+    if (storeLoading) return
+
+    if (isConfigured && (!profile || profile.role === 'operator')) {
+      router.push('/dashboard')
       return
+    }
+
+    if (!isConfigured || !profile) {
+      const timer = setTimeout(() => {
+        setStats(prev => ({ ...prev, loading: false }))
+      }, 0)
+      return () => clearTimeout(timer)
     }
 
     const storeId = profile.store_id
@@ -104,7 +113,7 @@ export default function AdminPage() {
     }
 
     fetchAdminStats()
-  }, [isConfigured, profile])
+  }, [storeLoading, isConfigured, profile, router])
 
   const ADMIN_BLOCKS = [
     {
@@ -152,6 +161,14 @@ export default function AdminPage() {
       route: '/dashboard/admin/sessions',
     },
   ]
+
+  if (storeLoading) {
+    return null
+  }
+
+  if (isConfigured && (!profile || profile.role === 'operator')) {
+    return null
+  }
 
   if (isLive && stats.loading) {
     return (
@@ -271,7 +288,9 @@ export default function AdminPage() {
         </p>
         <div className="space-y-1.5">
           {(isLive ? stats.sampleItems : MOCK_ITEMS.slice(0, 6)).map(item => {
-            const itemType = (isLive ? (item as any).item_type : (item as any).type) as ItemType
+            const itemType = (isLive
+              ? (item as { item_type?: string }).item_type
+              : (item as { type?: string }).type) as ItemType
             const typeCfg = ITEM_TYPE_CONFIG[itemType] || { label: 'Outro', color: '#6B7280' }
             return (
               <div

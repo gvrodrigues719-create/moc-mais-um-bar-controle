@@ -31,7 +31,9 @@ export function useStoreData(): StoreData {
     const configured = isSupabaseConfigured()
 
     if (!configured) {
-      setData({ ...INITIAL, loading: false, isConfigured: false })
+      Promise.resolve().then(() => {
+        setData({ ...INITIAL, loading: false, isConfigured: false })
+      })
       return
     }
 
@@ -86,8 +88,9 @@ export function useStoreData(): StoreData {
           recentSessions: sessionsRes.data ?? [],
           error: null,
         })
-      } catch (err: any) {
-        setData({ ...INITIAL, loading: false, isConfigured: true, error: err.message })
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Erro inesperado ao carregar dados.'
+        setData({ ...INITIAL, loading: false, isConfigured: true, error: errorMsg })
       }
     }
 

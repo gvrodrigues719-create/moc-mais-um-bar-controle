@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, MapPin, Package, Users, ClipboardList, ChevronRight, Loader2 } from 'lucide-react'
+import { ArrowLeft, MapPin, Package, Users, ClipboardList, ChevronRight, Loader2, Lightbulb } from 'lucide-react'
 import { useStoreData } from '@/hooks/useStoreData'
 import { ITEM_TYPE_CONFIG, type ItemType } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
@@ -170,8 +170,17 @@ export default function AdminPage() {
         : 'Sessões de contagem ativas',
       route: '/dashboard/admin/sessions',
     },
+    {
+      id: 'purchases',
+      icon: Lightbulb,
+      title: 'Compras',
+      description: 'Configure parâmetros e gere sugestões de compra a partir das contagens.',
+      status: 'Novo',
+      statusStyle: 'bg-red-50 text-red-700 border-red-200',
+      infoText: 'Parâmetros, fornecedores e sugestões',
+      route: '/dashboard/admin/purchases',
+    },
   ]
-
   if (storeLoading) {
     return null
   }

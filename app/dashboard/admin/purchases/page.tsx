@@ -48,6 +48,13 @@ export default function PurchasesPage() {
   const [completedSessions, setCompletedSessions] = useState<CompletedSessionInfo[]>([])
   const [suggestions, setSuggestions] = useState<PurchaseSuggestionInfo[]>([])
 
+  // Contadores para o dashboard inicial
+  const [dashSuppliersCount, setDashSuppliersCount] = useState<number | null>(null)
+  const [dashConfiguredCount, setDashConfiguredCount] = useState<number | null>(null)
+  const [dashTotalItems, setDashTotalItems] = useState<number | null>(null)
+  const [dashSuggestionsCount, setDashSuggestionsCount] = useState<number | null>(null)
+  const [dashOrdersCount, setDashOrdersCount] = useState<number | null>(null)
+
   const [loading, setLoading] = useState(false)
 
   // Carregar dados conforme a seção ativa
@@ -84,6 +91,25 @@ export default function PurchasesPage() {
     setLoading(false)
   }, [])
 
+  // Carrega contadores do dashboard inicial
+  const loadDashboardCounts = useCallback(async () => {
+    const [supRes, paramRes, sugRes] = await Promise.all([
+      getSuppliersAction(),
+      getItemPurchaseParametersAction(),
+      getPurchaseSuggestionsAction(),
+    ])
+    if (supRes.success) setDashSuppliersCount(supRes.suppliers.length)
+    if (paramRes.success) {
+      setDashTotalItems(paramRes.items.length)
+      setDashConfiguredCount(paramRes.items.filter(i => i.parameter !== null).length)
+    }
+    if (sugRes.success) {
+      setDashSuggestionsCount(sugRes.suggestions.length)
+      // Pedidos = sugestões aprovadas
+      setDashOrdersCount(sugRes.suggestions.filter(s => s.status === 'approved').length)
+    }
+  }, [])
+
   useEffect(() => {
     if (storeLoading) return
     if (isConfigured && (!profile || profile.role === 'operator')) {
@@ -92,7 +118,9 @@ export default function PurchasesPage() {
     }
 
     const timer = setTimeout(() => {
-      if (activeSection === 'suppliers') {
+      if (activeSection === null) {
+        loadDashboardCounts()
+      } else if (activeSection === 'suppliers') {
         loadSuppliers()
       } else if (activeSection === 'parameters') {
         loadSuppliers() // parâmetros precisam da lista de fornecedores para dropdown
@@ -103,7 +131,7 @@ export default function PurchasesPage() {
       }
     }, 0)
     return () => clearTimeout(timer)
-  }, [activeSection, storeLoading, isConfigured, profile, router, loadSuppliers, loadParameters, loadSessionsAndSuggestions])
+  }, [activeSection, storeLoading, isConfigured, profile, router, loadSuppliers, loadParameters, loadSessionsAndSuggestions, loadDashboardCounts])
 
   // ────────────────────────────────────────────────────────────────────────────
   // SEÇÃO: FORNECEDORES (CRUD)
@@ -490,42 +518,23 @@ export default function PurchasesPage() {
           </div>
         </div>
 
-        {/* Informações da Loja */}
-        <div className="rounded-2xl p-4 border bg-white shadow-sm flex items-start gap-3" style={{ borderColor: 'var(--border)' }}>
-          <div className="p-2.5 rounded-xl border bg-gray-50 shrink-0" style={{ borderColor: 'var(--border)' }}>
-            <ClipboardList className="w-5 h-5" style={{ color: 'var(--brand)' }} />
-          </div>
-          <div>
-            <p className="text-xs font-black uppercase tracking-tight text-gray-800">Abastecimento & Compras</p>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              Gere listas automáticas por fornecedor a partir de limites de estoque mínimo e das contagens finalizadas.
-            </p>
-          </div>
+        {/* Banner institucional — não clicável */}
+        <div
+          className="rounded-2xl p-4 border bg-gray-50"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <p className="text-xs font-black uppercase tracking-tight text-gray-700">
+            Compras a partir da contagem
+          </p>
+          <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+            Configure fornecedores e parâmetros de estoque. Depois, gere sugestões de compra com base nas contagens finalizadas.
+          </p>
         </div>
 
-        {/* Grid de Cards */}
+        {/* Cards de navegação — ordem operacional */}
         <div className="space-y-3">
-          <button
-            onClick={() => setActiveSection('parameters')}
-            className="w-full rounded-xl p-4 border flex items-center justify-between bg-white hover:border-gray-300 transition-all active:scale-[0.99] cursor-pointer text-left shadow-sm"
-            style={{ borderColor: 'var(--border)' }}
-          >
-            <div className="flex items-start gap-3 flex-1">
-              <div className="p-2 rounded-lg bg-red-50 border border-red-100 mt-0.5">
-                <Settings className="w-4 h-4" style={{ color: 'var(--brand)' }} />
-              </div>
-              <div>
-                <p className="text-sm font-bold uppercase tracking-tight" style={{ color: 'var(--foreground)' }}>
-                  Parâmetros de Compra
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Configure estoque mínimo, estoque ideal e tipo de reposição dos itens.
-                </p>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-gray-400 shrink-0 ml-2" />
-          </button>
 
+          {/* 1. Fornecedores */}
           <button
             onClick={() => setActiveSection('suppliers')}
             className="w-full rounded-xl p-4 border flex items-center justify-between bg-white hover:border-gray-300 transition-all active:scale-[0.99] cursor-pointer text-left shadow-sm"
@@ -539,14 +548,45 @@ export default function PurchasesPage() {
                 <p className="text-sm font-bold uppercase tracking-tight" style={{ color: 'var(--foreground)' }}>
                   Fornecedores
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Cadastre fornecedores e contatos usados nos pedidos.
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                  {dashSuppliersCount === null
+                    ? 'Carregando...'
+                    : dashSuppliersCount === 0
+                      ? 'Nenhum fornecedor cadastrado'
+                      : `${dashSuppliersCount} fornecedor${dashSuppliersCount !== 1 ? 'es' : ''} cadastrado${dashSuppliersCount !== 1 ? 's' : ''}`}
                 </p>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-gray-400 shrink-0 ml-2" />
           </button>
 
+          {/* 2. Parâmetros de Compra */}
+          <button
+            onClick={() => setActiveSection('parameters')}
+            className="w-full rounded-xl p-4 border flex items-center justify-between bg-white hover:border-gray-300 transition-all active:scale-[0.99] cursor-pointer text-left shadow-sm"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <div className="flex items-start gap-3 flex-1">
+              <div className="p-2 rounded-lg bg-red-50 border border-red-100 mt-0.5">
+                <Settings className="w-4 h-4" style={{ color: 'var(--brand)' }} />
+              </div>
+              <div>
+                <p className="text-sm font-bold uppercase tracking-tight" style={{ color: 'var(--foreground)' }}>
+                  Parâmetros de Compra
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                  {dashConfiguredCount === null || dashTotalItems === null
+                    ? 'Carregando...'
+                    : dashConfiguredCount === 0
+                      ? `Nenhum item configurado de ${dashTotalItems}`
+                      : `${dashConfiguredCount} de ${dashTotalItems} itens configurados`}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-400 shrink-0 ml-2" />
+          </button>
+
+          {/* 3. Sugestões de Compra */}
           <button
             onClick={() => setActiveSection('suggestions')}
             className="w-full rounded-xl p-4 border flex items-center justify-between bg-white hover:border-gray-300 transition-all active:scale-[0.99] cursor-pointer text-left shadow-sm"
@@ -560,14 +600,19 @@ export default function PurchasesPage() {
                 <p className="text-sm font-bold uppercase tracking-tight" style={{ color: 'var(--foreground)' }}>
                   Sugestões de Compra
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Gere listas de compra com base em contagens finalizadas.
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                  {dashSuggestionsCount === null
+                    ? 'Carregando...'
+                    : dashSuggestionsCount === 0
+                      ? 'Nenhuma sugestão gerada'
+                      : `${dashSuggestionsCount} sugestão${dashSuggestionsCount !== 1 ? 'ões' : ''} gerada${dashSuggestionsCount !== 1 ? 's' : ''}`}
                 </p>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-gray-400 shrink-0 ml-2" />
           </button>
 
+          {/* 4. Pedidos */}
           <button
             onClick={() => setActiveSection('orders')}
             className="w-full rounded-xl p-4 border flex items-center justify-between bg-white hover:border-gray-300 transition-all active:scale-[0.99] cursor-pointer text-left shadow-sm"
@@ -582,10 +627,14 @@ export default function PurchasesPage() {
                   <p className="text-sm font-bold uppercase tracking-tight" style={{ color: 'var(--foreground)' }}>
                     Pedidos
                   </p>
-                  <span className="text-[8px] font-black bg-red-100 text-red-800 px-1.5 py-0.5 rounded border border-red-200">NOVO</span>
+                  <span className="text-[8px] font-black bg-green-100 text-green-800 px-1.5 py-0.5 rounded border border-green-200">ATIVO</span>
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Revise pedidos e copie listas por fornecedor.
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                  {dashOrdersCount === null
+                    ? 'Carregando...'
+                    : dashOrdersCount === 0
+                      ? 'Nenhum pedido aprovado'
+                      : `${dashOrdersCount} pedido${dashOrdersCount !== 1 ? 's' : ''} aprovado${dashOrdersCount !== 1 ? 's' : ''}`}
                 </p>
               </div>
             </div>

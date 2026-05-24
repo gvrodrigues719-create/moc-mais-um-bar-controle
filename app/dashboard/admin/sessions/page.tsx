@@ -221,7 +221,7 @@ export default function AdminSessionsPage() {
           <div className="space-y-1">
             <p className="text-sm font-extrabold">Modo de Demonstração</p>
             <p className="text-xs text-gray-400 max-w-xs mx-auto leading-relaxed">
-              O módulo de auditoria de sessões exige conexão ativa com o banco Supabase. Configure as variáveis de ambiente para visualizar logs de contagem reais.
+              O módulo de auditoria de sessões exige conexão ativa com o banco de dados. Configure as variáveis de ambiente para visualizar logs de contagem reais.
             </p>
           </div>
         </div>

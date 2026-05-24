@@ -333,7 +333,10 @@ export default function CountsPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl p-6 border bg-white shadow-[0_4px_12px_rgba(0,0,0,0.02)] text-center space-y-5">
+        <div
+          className="rounded-2xl p-5 border bg-white shadow-md border-t-[3px] text-center space-y-5"
+          style={{ borderColor: 'var(--border)', borderTopColor: 'var(--brand)' }}
+        >
           <div className="w-12 h-12 mx-auto rounded-full bg-red-50 flex items-center justify-center border border-red-100 animate-pulse">
             <ClipboardList className="w-6 h-6" style={{ color: 'var(--brand)' }} />
           </div>
@@ -342,7 +345,7 @@ export default function CountsPage() {
               Pronto para iniciar
             </h3>
             <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
-              Uma nova sessão de contagem será aberta. O sistema inicializará os **223 itens reais** e os dividirá nas áreas físicas correspondentes.
+              Uma nova sessão será aberta com 223 itens distribuídos nas áreas de contagem.
             </p>
           </div>
 

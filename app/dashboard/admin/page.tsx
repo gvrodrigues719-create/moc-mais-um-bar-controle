@@ -94,8 +94,8 @@ export default function AdminPage() {
         const active = sessions?.filter(s => s.status === 'in_progress').length || 0
         const completed = sessions?.filter(s => s.status === 'completed').length || 0
 
-        // Get first 6 items as a real-time sample list
-        const sample = (items || []).slice(0, 6)
+        // Get first 3 items as a real-time sample list
+        const sample = (items || []).slice(0, 3)
 
         setStats({
           totalItems: items?.length || 0,
@@ -252,6 +252,7 @@ export default function AdminPage() {
             const currentQty = isLive 
               ? (stats.types[key] || 0) 
               : (MOCK_ITEMS.filter(x => x.type === key).length || 0)
+            if (currentQty === 0) return null
             return (
               <div
                 key={key}
@@ -287,7 +288,7 @@ export default function AdminPage() {
           Insumos Cadastrados (Amostra)
         </p>
         <div className="space-y-1.5">
-          {(isLive ? stats.sampleItems : MOCK_ITEMS.slice(0, 6)).map(item => {
+          {(isLive ? stats.sampleItems : MOCK_ITEMS.slice(0, 3)).map(item => {
             const itemType = (isLive
               ? (item as { item_type?: string }).item_type
               : (item as { type?: string }).type) as ItemType
@@ -310,9 +311,13 @@ export default function AdminPage() {
               </div>
             )
           })}
-          <p className="text-xs text-center pt-2 font-bold text-gray-400">
-            + {isLive ? stats.totalItems - stats.sampleItems.length : MOCK_ITEMS.length - 6} itens ativos cadastrados no Supabase
-          </p>
+          <button
+            onClick={() => router.push('/dashboard/admin/items')}
+            className="w-full text-center pt-2.5 font-bold text-xs uppercase tracking-wider hover:opacity-80 transition cursor-pointer"
+            style={{ color: 'var(--brand)' }}
+          >
+            Ver todos os itens cadastrados
+          </button>
         </div>
       </div>
 

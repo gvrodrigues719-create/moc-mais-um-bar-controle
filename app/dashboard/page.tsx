@@ -199,14 +199,14 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Banner: Supabase configurado mas sem profile */}
+      {/* Banner: Banco configurado mas sem profile */}
       {isConfigured && !profile && (
         <div
           className="rounded-xl px-4 py-3 space-y-1 text-xs font-medium"
           style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
         >
           <p className="font-bold">Usuário sem perfil operacional.</p>
-          <p>Configure o perfil em Supabase → tabela profiles.</p>
+          <p>Seu acesso ainda precisa ser configurado por um administrador.</p>
         </div>
       )}
 
